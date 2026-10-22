@@ -16,6 +16,7 @@
 #include "capabilities.h"
 #include "config/config.h"
 #include "log.h"
+#ifdef __linux__
 // prctl(), PR_CAP_AMBIENT
 #include <sys/prctl.h>
 
@@ -233,6 +234,8 @@ bool check_capability(const unsigned int cap)
 	return available;
 }
 
+#endif // __linux__
+
 /**
  * @brief Checks the required Linux capabilities for the application.
  *
@@ -288,6 +291,7 @@ static bool binds_privileged_port(void)
 	return privileged;
 }
 
+#ifdef __linux__
 // Warn when a capability this configuration needs is missing. Returns false
 // only in that case: a capability the running configuration does not use is
 // not reported at all
@@ -355,3 +359,65 @@ bool check_capabilities(void)
 	// Return whether capabilities are all okay
 	return capabilities_okay;
 }
+
+#else // !__linux__
+
+// Without per-process capabilities everything FTL asks for comes with root,
+// and nothing can be set aside or handed on: these only report whether FTL
+// runs as root
+bool suspend_capability(const unsigned int cap)
+{
+	(void)cap;
+	return true;
+}
+
+bool restore_capability_for_exec(const unsigned int cap)
+{
+	(void)cap;
+	return geteuid() == 0;
+}
+
+bool use_capability(const unsigned int cap, const bool enable)
+{
+	(void)cap;
+	(void)enable;
+	return geteuid() == 0;
+}
+
+bool check_capability(const unsigned int cap)
+{
+	(void)cap;
+	return geteuid() == 0;
+}
+
+bool check_capabilities(void)
+{
+	if(geteuid() == 0)
+		return true;
+
+	bool capabilities_okay = true;
+	if(config.dhcp.active.v.b)
+	{
+		log_warn("Not running as root, needed for ARP injection while acting as the DHCP server");
+		capabilities_okay = false;
+	}
+	if(binds_privileged_port())
+	{
+		log_warn("Not running as root, needed for binding a privileged port");
+		capabilities_okay = false;
+	}
+	if(config.misc.nice.v.i < 0)
+	{
+		log_warn("Not running as root, needed for raising the process priority set in misc.nice");
+		capabilities_okay = false;
+	}
+	if(config.ntp.sync.active.v.b)
+	{
+		log_warn("Not running as root, needed for setting the system time from the NTP client");
+		capabilities_okay = false;
+	}
+	log_warn("Not running as root, needed for taking ownership of the files FTL creates");
+	return false && capabilities_okay;
+}
+
+#endif // __linux__

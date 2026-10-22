@@ -27,7 +27,7 @@
 // logg_rate_limit_message()
 #include "database/message-table.h"
 // get_nprocs()
-#include <sys/sysinfo.h>
+#include "compat/sysinfo.h"
 // get_path_usage()
 #include "files.h"
 // void calc_cpu_usage()

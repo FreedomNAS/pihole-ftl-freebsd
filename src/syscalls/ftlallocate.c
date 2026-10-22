@@ -27,6 +27,18 @@ int FTLfallocate(const int fd, const off_t offset, const off_t len, const char *
 	// interruption by an incoming signal
 	while(ret == EINTR);
 
+#ifndef __linux__
+	// Shared memory objects may not support reserving space; growing them
+	// with ftruncate() is what is left
+	if(ret == EINVAL || ret == ENODEV || ret == EOPNOTSUPP || ret == ESPIPE)
+	{
+		struct stat st;
+		ret = 0;
+		if(fstat(fd, &st) == 0 && st.st_size < offset + len && ftruncate(fd, offset + len) != 0)
+			ret = errno;
+	}
+#endif
+
 	// Final error checking (may have failed for some other reason then an
 	// EINTR = interrupted system call)
 	if(ret > 0)

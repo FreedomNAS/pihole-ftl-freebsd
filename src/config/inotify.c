@@ -13,7 +13,7 @@
 #include "log.h"
 #include <sys/inotify.h>
 // NAME_MAX
-#include <linux/limits.h>
+#include <limits.h>
 // FILE
 #include <stdio.h>
 // sleepms()

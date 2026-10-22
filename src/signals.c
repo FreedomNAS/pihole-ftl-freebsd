@@ -20,6 +20,7 @@
 #  include <sys/wait.h>  // waitpid()/WIFEXITED() - reap the addr2line child
 #endif
 #include <sys/mman.h>    // mmap() - alternate signal stack with a guard page
+#include "compat/selfexe.h"
 #include "signals.h"
 // logging routines
 #include "log.h"
@@ -82,7 +83,7 @@ void init_backtrace(const char *argv0)
 #if defined(USE_UNWIND)
 	// /proc/self/exe gives the canonical absolute path even when argv[0] is
 	// a relative path, a bare binary name, or a symlink.
-	ssize_t len = readlink("/proc/self/exe", bin_path, sizeof(bin_path) - 1u);
+	ssize_t len = self_exe(bin_path, sizeof(bin_path) - 1u);
 	if(len > 0)
 		bin_path[len] = '\0';
 	else if(argv0 != NULL)
@@ -311,7 +312,13 @@ static int collect_from_signal_context(void **frames, const int max_frames, void
 	uintptr_t ip = 0;
 	uintptr_t fp = 0;
 
-#if defined(__x86_64__)
+#if defined(__FreeBSD__) && defined(__x86_64__)
+	ip = (uintptr_t)uc->uc_mcontext.mc_rip;
+	fp = (uintptr_t)uc->uc_mcontext.mc_rbp;
+#elif defined(__FreeBSD__) && defined(__aarch64__)
+	ip = (uintptr_t)uc->uc_mcontext.mc_gpregs.gp_elr;
+	fp = (uintptr_t)uc->uc_mcontext.mc_gpregs.gp_x[29];
+#elif defined(__x86_64__)
 	ip = (uintptr_t)uc->uc_mcontext.gregs[REG_RIP];
 	fp = (uintptr_t)uc->uc_mcontext.gregs[REG_RBP];
 #elif defined(__aarch64__)

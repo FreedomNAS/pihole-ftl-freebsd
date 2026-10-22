@@ -193,6 +193,12 @@ separate_arguments(EXTRAWARN)
 
 # -Wxor-used-as-pow
 
+# FreeBSD installs third-party headers and libraries under /usr/local
+if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+    include_directories(SYSTEM /usr/local/include)
+    link_directories(/usr/local/lib)
+endif()
+
 # Do we want to compile a statically linked executable?
 if(DEFINED ENV{STATIC})
     if($ENV{STATIC} STREQUAL "true")
@@ -228,6 +234,9 @@ set(sources
         args.h
         capabilities.c
         capabilities.h
+        compat/gettid.c
+        compat/sysinfo.c
+        compat/sysinfo.h
         daemon.c
         daemon.h
         datastructure.c

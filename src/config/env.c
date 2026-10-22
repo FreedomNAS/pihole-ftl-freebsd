@@ -38,6 +38,8 @@ struct env_item
 
 static struct env_item *env_list = NULL;
 
+extern char **environ;
+
 void getEnvVars(void)
 {
 	// Read environment variables only once

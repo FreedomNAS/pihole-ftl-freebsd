@@ -25,7 +25,7 @@
 // forked
 #include "main.h"
 // sysinfo()
-#include <sys/sysinfo.h>
+#include "compat/sysinfo.h"
 #include <errno.h>
 // getprio(), setprio()
 #include <sys/resource.h>
@@ -243,10 +243,15 @@ const char *hostname(void)
 		{
 			strncpy(nodename, buf.nodename, HOSTNAMESIZE);
 
+#ifdef __linux__
 			// Only set domain name if node name is not empty: the
 			// kernel replies with '(none)' in this case.
 			if(!(buf.domainname[0] == '(' && strncmp(buf.domainname, "(none)", 6) == 0))
 				strncpy(dname, buf.domainname, HOSTNAMESIZE);
+#else
+			if(getdomainname(dname, HOSTNAMESIZE) != 0)
+				dname[0] = '\0';
+#endif
 		}
 		nodename[HOSTNAMESIZE - 1] = '\0';
 		dname[HOSTNAMESIZE - 1] = '\0';
@@ -307,6 +312,8 @@ pid_t FTL_gettid(void)
 {
 #ifdef SYS_gettid
 	return (pid_t)syscall(SYS_gettid);
+#elif defined(__FreeBSD__)
+	return (pid_t)pthread_getthreadid_np();
 #else
 #warning SYS_gettid is not available on this system
 	return -1;

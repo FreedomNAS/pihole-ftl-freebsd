@@ -1161,7 +1161,12 @@ bool _FTL_new_query(const unsigned int flags, const char *name,
 	// (e.g., when retrying a query using TCP after UDP truncation). ECS
 	// clients usually have no neighbor entry here, and a lookup that found
 	// nothing (hwlen 0) is repeated after MAC_LOOKUP_RETRY seconds at most
-	if(!internal_query && !ecs_client && client->hwlen < 1 && daemon->netlinkfd > 0 &&
+	if(!internal_query && !ecs_client && client->hwlen < 1 &&
+#if defined(HAVE_LINUX_NETWORK)
+	   daemon->netlinkfd > 0 &&
+#elif defined(HAVE_BSD_NETWORK)
+	   daemon->routefd > 0 &&
+#endif
 	   (client->hwlen != 0 ||
 	    ABS_TO_SHM_TIME((time_t)querytimestamp) - client->lastMACLookup >= MAC_LOOKUP_RETRY))
 	{

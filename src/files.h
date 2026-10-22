@@ -13,7 +13,7 @@
 #include <stdbool.h>
 #include <sys/stat.h>
 // setmntent()
-#include <mntent.h>
+#include "compat/mntent.h"
 // SHA256_DIGEST_SIZE
 #include <nettle/sha2.h>
 // getpwuid()

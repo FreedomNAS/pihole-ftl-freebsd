@@ -10,6 +10,7 @@
 
 #include "FTL.h"
 #include "files.h"
+#include "compat/selfexe.h"
 #include "config/config.h"
 #include "config/setupVars.h"
 #include "log.h"
@@ -30,7 +31,9 @@
 #include <libgen.h>
 // sendfile()
 #include <fcntl.h>
+#ifdef __linux__
 #include <sys/sendfile.h>
+#endif
 // PRIu64
 #include <inttypes.h>
 //basename()
@@ -331,6 +334,22 @@ unsigned int get_path_usage(const char *path, char buffer[64])
 }
 
 // Get the filesystem where the given path is located
+#ifndef __linux__
+#include <sys/param.h>
+#include <sys/mount.h>
+struct mntent *get_filesystem_details(const char *path)
+{
+	static struct statfs fs;
+	static struct mntent ent;
+	if(statfs(path, &fs) != 0)
+		return NULL;
+	ent.mnt_fsname = fs.f_mntfromname;
+	ent.mnt_dir = fs.f_mntonname;
+	ent.mnt_type = fs.f_fstypename;
+	ent.mnt_opts = (char *)"";
+	return &ent;
+}
+#else
 struct mntent *get_filesystem_details(const char *path)
 {
 	// stat the file in question
@@ -368,6 +387,7 @@ struct mntent *get_filesystem_details(const char *path)
 
 	return found ? ent : NULL;
 }
+#endif
 
 // Credits: https://stackoverflow.com/a/55410469
 static char *trim(char *str)
@@ -389,7 +409,7 @@ static char *trim(char *str)
 static int copy_file(const char *source, const char *destination)
 {
 // Check glibc >= 2.27 for copy_file_range()
-#if __GLIBC__ > 2 ||  (__GLIBC__ == 2 && (__GLIBC_MINOR__ >= 27 ))
+#if __GLIBC__ > 2 ||  (__GLIBC__ == 2 && (__GLIBC_MINOR__ >= 27 )) || defined(__FreeBSD__)
 	int fd_in, fd_out;
 	struct stat stat;
 	size_t len;
@@ -878,7 +898,7 @@ enum verify_result verify_FTL(bool verbose)
 {
 	// Get the filename of the current executable
 	char filename[PATH_MAX] = { 0 };
-	if(readlink("/proc/self/exe", filename, sizeof(filename)) == -1)
+	if(self_exe(filename, sizeof(filename)) == -1)
 	{
 		log_err("Failed to read self filename: %s", strerror(errno));
 		return VERIFY_ERROR;

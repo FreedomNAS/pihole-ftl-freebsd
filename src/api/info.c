@@ -13,7 +13,7 @@
 #include "webserver/json_macros.h"
 #include "api/api.h"
 // sysinfo(), get_nprocs_conf()
-#include <sys/sysinfo.h>
+#include "compat/sysinfo.h"
 // get_blockingstatus()
 #include "config/setupVars.h"
 // counters
@@ -522,7 +522,14 @@ static int get_host_obj(struct ftl_conn *api, cJSON *host)
 	cJSON *uname_ = JSON_NEW_OBJECT();
 	struct utsname un = { 0 };
 	uname(&un);
+#ifdef __linux__
 	JSON_COPY_STR_TO_OBJECT(uname_, "domainname", un.domainname);
+#else
+	char domainname[256] = { 0 };
+	if(getdomainname(domainname, sizeof(domainname) - 1) != 0)
+		domainname[0] = '\0';
+	JSON_COPY_STR_TO_OBJECT(uname_, "domainname", domainname);
+#endif
 	JSON_COPY_STR_TO_OBJECT(uname_, "machine", un.machine);
 	JSON_COPY_STR_TO_OBJECT(uname_, "nodename", un.nodename);
 	JSON_COPY_STR_TO_OBJECT(uname_, "release", un.release);

@@ -19,7 +19,7 @@
 // log_web()
 #include "log.h"
 // get_nprocs()
-#include <sys/sysinfo.h>
+#include "compat/sysinfo.h"
 // file_readable()
 #include "files.h"
 // generate_certificate()

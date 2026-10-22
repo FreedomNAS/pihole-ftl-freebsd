@@ -9,6 +9,20 @@
 *
 *  This file is copyright under the latest version of the EUPL.
 *  Please see LICENSE file for your rights under this license. */
+#ifndef __linux__
+#include "FTL.h"
+#include "dhcpv6-discover.h"
+#include <stdio.h>
+#include <stdlib.h>
+
+int dhcpv6_discover_iface(const char *ifname, const unsigned int timeout)
+{
+	(void)ifname;
+	(void)timeout;
+	return 0;
+}
+#else
+
 
 #include "dhcpv6-discover.h"
 #include "dhcp-discover.h"
@@ -859,3 +873,4 @@ int dhcpv6_discover_iface(const char *ifname, const unsigned int timeout)
 
 	return do_discoverv6(fd, ifname, timeout);
 }
+#endif // __linux__

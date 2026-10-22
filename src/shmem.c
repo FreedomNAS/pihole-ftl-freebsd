@@ -1083,6 +1083,7 @@ static bool create_shm(const char *suffix, SharedMemory *sharedMemory, const siz
 		return sharedMemory;
 	}
 
+#ifdef __linux__
 	// Create exclusive file lock on shared memory object
 	// The lock will be automatically released when the file descriptor is closed
 	sharedMemory->lock.l_type = F_WRLCK; // write = exclusive lock
@@ -1098,6 +1099,7 @@ static bool create_shm(const char *suffix, SharedMemory *sharedMemory, const siz
 		close(sharedMemory->fd);
 		return sharedMemory;
 	}
+#endif // __linux__: elsewhere POSIX shared memory takes no file locks; O_EXCL above is what keeps it ours
 
 	// Allocate shared memory object to specified size
 	// Using f[tl]allocate() will ensure that there's actually space for
@@ -1277,7 +1279,15 @@ static bool realloc_shm(SharedMemory *sharedMemory, const size_t size1, const si
 		local_shm_counter++;
 	}
 
+#ifdef __linux__
 	void *new_ptr = mremap(sharedMemory->ptr, sharedMemory->size, new_size, MREMAP_MAYMOVE);
+#else
+	// No mremap(): map the object again at its new size, then drop the old
+	// mapping. Both are views of the same object, so nothing is copied
+	void *new_ptr = mmap(NULL, new_size, PROT_READ | PROT_WRITE, MAP_SHARED, sharedMemory->fd, 0);
+	if(new_ptr != MAP_FAILED)
+		munmap(sharedMemory->ptr, sharedMemory->size);
+#endif
 	if(new_ptr == MAP_FAILED)
 	{
 		log_crit("realloc_shm(): mremap(%p, %zu, %zu, MREMAP_MAYMOVE): Failed to reallocate \"%s\": %s",

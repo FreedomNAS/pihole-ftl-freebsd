@@ -7,6 +7,19 @@
 *
 *  This file is copyright under the latest version of the EUPL.
 *  Please see LICENSE file for your rights under this license. */
+#ifndef __linux__
+#include "FTL.h"
+#include "dhcp-discover.h"
+#include <stdio.h>
+#include <stdlib.h>
+
+int run_dhcp_discover(void)
+{
+	puts("dhcp-discover is not supported on this platform yet");
+	return EXIT_FAILURE;
+}
+#else
+
 
 #define FTLDNS
 #include "dnsmasq/dnsmasq.h"
@@ -948,3 +961,4 @@ int run_dhcp_discover(void)
 
 	return EXIT_SUCCESS;
 }
+#endif // __linux__

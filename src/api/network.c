@@ -26,9 +26,13 @@
 #include "config/config.h"
 // PRIx64
 #include <inttypes.h>
+#ifdef __linux__
 #include <linux/rtnetlink.h>
+#endif
+#ifdef __linux__
 // IFA_LINK and friends
 #include <linux/if_addr.h>
+#endif
 // nlroutes(), nladdrs(), nllinks()
 #include "tools/netlink.h"
 

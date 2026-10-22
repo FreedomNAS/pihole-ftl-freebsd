@@ -12,78 +12,206 @@
 
 static struct flag_names iflatypes[] =
 {
+#if defined(__linux__) || defined(ARPHRD_NETROM)
 	{ ARPHRD_NETROM, "netrom" },
+#endif
 	{ ARPHRD_ETHER, "ether" },
+#if defined(__linux__) || defined(ARPHRD_EETHER)
 	{ ARPHRD_EETHER, "eether" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_AX25)
 	{ ARPHRD_AX25, "ax25" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_PRONET)
 	{ ARPHRD_PRONET, "pronet" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_CHAOS)
 	{ ARPHRD_CHAOS, "chaos" },
+#endif
 	{ ARPHRD_IEEE802, "ieee802" },
+#if defined(__linux__) || defined(ARPHRD_ARCNET)
 	{ ARPHRD_ARCNET, "arcnet" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_APPLETLK)
 	{ ARPHRD_APPLETLK, "appletlk" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_DLCI)
 	{ ARPHRD_DLCI, "dlci" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_ATM)
 	{ ARPHRD_ATM, "atm" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_METRICOM)
 	{ ARPHRD_METRICOM, "metricom" },
+#endif
 	{ ARPHRD_IEEE1394, "ieee1394" },
+#if defined(__linux__) || defined(ARPHRD_EUI64)
 	{ ARPHRD_EUI64, "eui64" },
+#endif
 	{ ARPHRD_INFINIBAND, "infiniband" },
+#if defined(__linux__) || defined(ARPHRD_SLIP)
 	{ ARPHRD_SLIP, "slip" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_CSLIP)
 	{ ARPHRD_CSLIP, "cslip" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_SLIP6)
 	{ ARPHRD_SLIP6, "slip6" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_CSLIP6)
 	{ ARPHRD_CSLIP6, "cslip6" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_RSRVD)
 	{ ARPHRD_RSRVD, "rsrvd" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_ADAPT)
 	{ ARPHRD_ADAPT, "adapt" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_ROSE)
 	{ ARPHRD_ROSE, "rose" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_X25)
 	{ ARPHRD_X25, "x25" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_HWX25)
 	{ ARPHRD_HWX25, "hwx25" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_CAN)
 	{ ARPHRD_CAN, "can" },
+#endif
 #if defined (ARPHRD_MCTP)
 	// 2025-May: kernel version dependent
 	{ ARPHRD_MCTP, "mctp" },
 #endif
+#if defined(__linux__) || defined(ARPHRD_PPP)
 	{ ARPHRD_PPP, "ppp" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_CISCO)
 	{ ARPHRD_CISCO, "cisco" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_HDLC)
 	{ ARPHRD_HDLC, "hdlc" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_CISCO)
 	{ ARPHRD_CISCO, "cisco" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_LAPB)
 	{ ARPHRD_LAPB, "lapb" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_DDCMP)
 	{ ARPHRD_DDCMP, "ddcmp" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_RAWHDLC)
 	{ ARPHRD_RAWHDLC, "rawhdlc" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_RAWIP)
 	{ ARPHRD_RAWIP, "rawip" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_TUNNEL)
 	{ ARPHRD_TUNNEL, "tunnel" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_TUNNEL6)
 	{ ARPHRD_TUNNEL6, "tunnel6" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_FRAD)
 	{ ARPHRD_FRAD, "frad" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_SKIP)
 	{ ARPHRD_SKIP, "skip" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_LOOPBACK)
 	{ ARPHRD_LOOPBACK, "loopback" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_LOCALTLK)
 	{ ARPHRD_LOCALTLK, "localtlk" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_FDDI)
 	{ ARPHRD_FDDI, "fddi" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_BIF)
 	{ ARPHRD_BIF, "bif" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_SIT)
 	{ ARPHRD_SIT, "sit" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_IPDDP)
 	{ ARPHRD_IPDDP, "ipddp" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_IPGRE)
 	{ ARPHRD_IPGRE, "ipgre" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_PIMREG)
 	{ ARPHRD_PIMREG, "pimreg" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_HIPPI)
 	{ ARPHRD_HIPPI, "hippi" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_ASH)
 	{ ARPHRD_ASH, "ash" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_ECONET)
 	{ ARPHRD_ECONET, "econet" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_IRDA)
 	{ ARPHRD_IRDA, "irda" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_FCPP)
 	{ ARPHRD_FCPP, "fcpp" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_FCAL)
 	{ ARPHRD_FCAL, "fcal" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_FCPL)
 	{ ARPHRD_FCPL, "fcpl" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_FCFABRIC)
 	{ ARPHRD_FCFABRIC, "fcfabric" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_IEEE802_TR)
 	{ ARPHRD_IEEE802_TR, "ieee802_tr" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_IEEE80211)
 	{ ARPHRD_IEEE80211, "ieee80211" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_IEEE80211_PRISM)
 	{ ARPHRD_IEEE80211_PRISM, "ieee80211_prism" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_IEEE80211_RADIOTAP)
 	{ ARPHRD_IEEE80211_RADIOTAP, "ieee80211_radiotap" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_IEEE802154)
 	{ ARPHRD_IEEE802154, "ieee802154" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_IEEE802154_MONITOR)
 	{ ARPHRD_IEEE802154_MONITOR, "ieee802154_monitor" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_PHONET)
 	{ ARPHRD_PHONET, "phonet" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_PHONET_PIPE)
 	{ ARPHRD_PHONET_PIPE, "phonet_pipe" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_CAIF)
 	{ ARPHRD_CAIF, "caif" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_IP6GRE)
 	{ ARPHRD_IP6GRE, "ip6gre" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_NETLINK)
 	{ ARPHRD_NETLINK, "netlink" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_6LOWPAN)
 	{ ARPHRD_6LOWPAN, "6lowpan" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_VSOCKMON)
 	{ ARPHRD_VSOCKMON, "vsockmon" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_VOID)
 	{ ARPHRD_VOID, "void" },
+#endif
+#if defined(__linux__) || defined(ARPHRD_NONE)
 	{ ARPHRD_NONE, "none" },
+#endif
 };
 
 static struct flag_names ifaf_flags[] = {
@@ -108,17 +236,29 @@ static struct flag_names iff_flags[] = {
 	{ IFF_DEBUG, "debug" },
 	{ IFF_LOOPBACK, "loopback" },
 	{ IFF_POINTOPOINT, "pointopoint" },
+#if defined(__linux__) || defined(IFF_NOTRAILERS)
 	{ IFF_NOTRAILERS, "notrailers" },
+#endif
 	{ IFF_RUNNING, "running" },
 	{ IFF_NOARP, "noarp" },
 	{ IFF_PROMISC, "promisc" },
 	{ IFF_ALLMULTI, "allmulti" },
+#if defined(__linux__) || defined(IFF_MASTER)
 	{ IFF_MASTER, "master" },
+#endif
+#if defined(__linux__) || defined(IFF_SLAVE)
 	{ IFF_SLAVE, "slave" },
+#endif
 	{ IFF_MULTICAST, "multicast" },
+#if defined(__linux__) || defined(IFF_PORTSEL)
 	{ IFF_PORTSEL, "portsel" },
+#endif
+#if defined(__linux__) || defined(IFF_AUTOMEDIA)
 	{ IFF_AUTOMEDIA, "automedia" },
+#endif
+#if defined(__linux__) || defined(IFF_DYNAMIC)
 	{ IFF_DYNAMIC, "dynamic" },
+#endif
 #ifdef IFF_LOWER_UP
 	{ IFF_LOWER_UP, "lower_up" },
 #endif
@@ -220,22 +360,48 @@ static struct flag_names ifstates[] = {
 	{ IF_OPER_UP, "up" },
 };
 
+#ifdef __linux__
 static struct flag_names link_events[] = {
+#if defined(__linux__) || defined(IFLA_EVENT_NONE)
 	{ IFLA_EVENT_NONE, "none" },
+#endif
+#if defined(__linux__) || defined(IFLA_EVENT_REBOOT)
 	{ IFLA_EVENT_REBOOT, "reboot" },
+#endif
+#if defined(__linux__) || defined(IFLA_EVENT_FEATURES)
 	{ IFLA_EVENT_FEATURES, "feature change" },
+#endif
+#if defined(__linux__) || defined(IFLA_EVENT_BONDING_FAILOVER)
 	{ IFLA_EVENT_BONDING_FAILOVER, "bonding failover" },
+#endif
+#if defined(__linux__) || defined(IFLA_EVENT_NOTIFY_PEERS)
 	{ IFLA_EVENT_NOTIFY_PEERS, "notify peers" },
+#endif
+#if defined(__linux__) || defined(IFLA_EVENT_IGMP_RESEND)
 	{ IFLA_EVENT_IGMP_RESEND, "resend igmp" },
+#endif
+#if defined(__linux__) || defined(IFLA_EVENT_BONDING_OPTIONS)
 	{ IFLA_EVENT_BONDING_OPTIONS, "bonding option" },
+#endif
 };
+#endif
 
+#ifdef __linux__
 static struct flag_names addr_gen_modes[] = {
+#if defined(__linux__) || defined(IN6_ADDR_GEN_MODE_EUI64)
 	{ IN6_ADDR_GEN_MODE_EUI64, "eui64" },
+#endif
+#if defined(__linux__) || defined(IN6_ADDR_GEN_MODE_NONE)
 	{ IN6_ADDR_GEN_MODE_NONE, "none" },
+#endif
+#if defined(__linux__) || defined(IN6_ADDR_GEN_MODE_STABLE_PRIVACY)
 	{ IN6_ADDR_GEN_MODE_STABLE_PRIVACY, "stable_secret" },
+#endif
+#if defined(__linux__) || defined(IN6_ADDR_GEN_MODE_RANDOM)
 	{ IN6_ADDR_GEN_MODE_RANDOM, "random" },
+#endif
 };
+#endif
 
 static const char *__attribute__ ((const)) rtaTypeToString(const int rta_type)
 {
@@ -467,6 +633,7 @@ static const char *__attribute__ ((const)) iflaTypeToString(const int ifla_type)
 }
 
 // Names of the RTAX_* attributes nested in RTA_METRICS (as used by iproute2)
+#ifdef __linux__
 static const char *__attribute__ ((const)) rtaxTypeToString(const int rtax_type)
 {
 	switch (rtax_type) {
@@ -508,6 +675,7 @@ static const char *__attribute__ ((const)) rtaxTypeToString(const int rtax_type)
 			return "unknown";
 	}
 }
+#endif
 
 static const char *__attribute__ ((const)) family_name(int family)
 {
@@ -519,54 +687,88 @@ static const char *__attribute__ ((const)) family_name(int family)
 			return "local";
 		case PF_INET:
 			return "inet";
+#if defined(__linux__) || defined(PF_AX25)
 		case PF_AX25:
 			return "ax25";
+#endif
 		case PF_IPX:
 			return "ipx";
 		case PF_APPLETALK:
 			return "appletalk";
+#if defined(__linux__) || defined(PF_NETROM)
 		case PF_NETROM:
 			return "netrom";
+#endif
+#if defined(__linux__) || defined(PF_BRIDGE)
 		case PF_BRIDGE:
 			return "bridge";
+#endif
+#if defined(__linux__) || defined(PF_ATMPVC)
 		case PF_ATMPVC:
 			return "atmpvc";
+#endif
+#if defined(__linux__) || defined(PF_X25)
 		case PF_X25:
 			return "x25";
+#endif
 		case PF_INET6:
 			return "inet6";
+#if defined(__linux__) || defined(PF_ROSE)
 		case PF_ROSE:
 			return "rose";
+#endif
 		case PF_DECnet:
 			return "decnet";
+#if defined(__linux__) || defined(PF_NETBEUI)
 		case PF_NETBEUI:
 			return "netbeui";
+#endif
+#if defined(__linux__) || defined(PF_SECURITY)
 		case PF_SECURITY:
 			return "security";
+#endif
 		case PF_KEY:
 			return "key";
 		case PF_NETLINK:
 			return "netlink";
+#if defined(__linux__) || defined(PF_PACKET)
 		case PF_PACKET:
 			return "packet";
+#endif
+#if defined(__linux__) || defined(PF_ASH)
 		case PF_ASH:
 			return "ash";
+#endif
+#if defined(__linux__) || defined(PF_ECONET)
 		case PF_ECONET:
 			return "econet";
+#endif
+#if defined(__linux__) || defined(PF_ATMSVC)
 		case PF_ATMSVC:
 			return "atmsvc";
+#endif
+#if defined(__linux__) || defined(PF_RDS)
 		case PF_RDS:
 			return "rds";
+#endif
 		case PF_SNA:
 			return "sna";
+#if defined(__linux__) || defined(PF_IRDA)
 		case PF_IRDA:
 			return "irda";
+#endif
+#if defined(__linux__) || defined(PF_PPPOX)
 		case PF_PPPOX:
 			return "pppox";
+#endif
+#if defined(__linux__) || defined(PF_WANPIPE)
 		case PF_WANPIPE:
 			return "wanpipe";
+#endif
+#if defined(__linux__) || defined(PF_LLC)
 		case PF_LLC:
 			return "llc";
+#endif
 #if defined (PF_IB)
 		// 2025-May: defined by glibc but not uClibc
 		case PF_IB:
@@ -577,36 +779,62 @@ static const char *__attribute__ ((const)) family_name(int family)
 		case PF_MPLS:
 			return "mpls";
 #endif
+#if defined(__linux__) || defined(PF_CAN)
 		case PF_CAN:
 			return "can";
+#endif
+#if defined(__linux__) || defined(PF_TIPC)
 		case PF_TIPC:
 			return "tipc";
+#endif
 		case PF_BLUETOOTH:
 			return "bluetooth";
+#if defined(__linux__) || defined(PF_IUCV)
 		case PF_IUCV:
 			return "iucv";
+#endif
+#if defined(__linux__) || defined(PF_RXRPC)
 		case PF_RXRPC:
 			return "rxrpc";
+#endif
 		case PF_ISDN:
 			return "isdn";
+#if defined(__linux__) || defined(PF_PHONET)
 		case PF_PHONET:
 			return "phonet";
+#endif
+#if defined(__linux__) || defined(PF_IEEE802154)
 		case PF_IEEE802154:
 			return "ieee802154";
+#endif
+#if defined(__linux__) || defined(PF_CAIF)
 		case PF_CAIF:
 			return "caif";
+#endif
+#if defined(__linux__) || defined(PF_ALG)
 		case PF_ALG:
 			return "alg";
+#endif
+#if defined(__linux__) || defined(PF_NFC)
 		case PF_NFC:
 			return "nfc";
+#endif
+#if defined(__linux__) || defined(PF_VSOCK)
 		case PF_VSOCK:
 			return "vsock";
+#endif
+#if defined(__linux__) || defined(PF_KCM)
 		case PF_KCM:
 			return "kcm";
+#endif
+#if defined(__linux__) || defined(PF_QIPCRTR)
 		case PF_QIPCRTR:
 			return "qipcrtr";
+#endif
+#if defined(__linux__) || defined(PF_SMC)
 		case PF_SMC:
 			return "smc";
+#endif
 #if defined (PF_XDP)
 		// 2025-May: defined by glibc but not uClibc
 		case PF_XDP:
@@ -628,6 +856,7 @@ static const char *__attribute__ ((const)) family_name(int family)
 #define parse_rtattr_one_nested(type, rta) \
 	(parse_rtattr_one(type, RTA_DATA(rta), RTA_PAYLOAD(rta)))
 
+#ifdef __linux__
 static int parse_rtattr_flags(struct rtattr *tb[], int max,
                               struct rtattr *rta, int len,
                               unsigned short flags)
@@ -643,7 +872,9 @@ static int parse_rtattr_flags(struct rtattr *tb[], int max,
 	}
 	return 0;
 }
+#endif
 
+#ifdef __linux__
 static struct rtattr * __attribute__((pure)) parse_rtattr_one(int type, struct rtattr *rta, int len)
 {
 	while (RTA_OK(rta, len)) {
@@ -653,3 +884,4 @@ static struct rtattr * __attribute__((pure)) parse_rtattr_one(int type, struct r
 	}
 	return NULL;
 }
+#endif

@@ -7,6 +7,21 @@
 *
 *  This file is copyright under the latest version of the EUPL.
 *  Please see LICENSE file for your rights under this license. */
+#ifndef __linux__
+#include "FTL.h"
+#include "arp-scan.h"
+#include <stdio.h>
+#include <stdlib.h>
+
+int run_arp_scan(const bool scan_all, const bool extreme_mode)
+{
+	(void)scan_all;
+	(void)extreme_mode;
+	puts("arp-scan is not supported on this platform yet");
+	return EXIT_FAILURE;
+}
+#else
+
 // Inspired by https://stackoverflow.com/a/39287433 but heavily modified
 
 #include "FTL.h"
@@ -787,3 +802,4 @@ int run_arp_scan(const bool scan_all, const bool extreme_mode)
 
 	return EXIT_SUCCESS;
 }
+#endif // __linux__

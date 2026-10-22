@@ -32,8 +32,7 @@
 #include <sys/timex.h>
 // pthread_create
 #include <pthread.h>
-// PR_SET_NAME
-#include <sys/prctl.h>
+// PR_SET_NAME is provided through FTL.h
 // config struct
 #include "config/config.h"
 // log_ntp_message()
@@ -102,7 +101,11 @@ static bool ntp_reply(const int socket_fd, const struct sockaddr *saddr_p, const
 		// reports it synchronized, otherwise announce that we are
 		// unsynchronized (LI = 3, stratum 16) as RFC 5905 requires
 		struct timex tx = { 0 };
+#ifdef __linux__
 		const int state = adjtimex(&tx);
+#else
+		const int state = ntp_adjtime(&tx);
+#endif
 		if(state >= 0 && state != TIME_ERROR)
 		{
 			stratum = 2;

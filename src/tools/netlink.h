@@ -14,6 +14,7 @@
 #include "webserver/cJSON/cJSON.h"
 #include "webserver/json_macros.h"
 
+#ifdef __linux__
 #include <linux/rtnetlink.h>
 // IFF_UP, etc.
 #include <net/if.h>
@@ -21,6 +22,23 @@
 #include <linux/if_addr.h>
 #ifndef _NET_IF_ARP_H
 #include <linux/if_arp.h>
+#endif
+#else
+// FreeBSD's netlink(4) speaks rtnetlink with Linux's names
+#include <sys/socket.h>
+#include <net/if.h>
+#include <net/if_arp.h>
+#include <netlink/netlink.h>
+#include <netlink/netlink_route.h>
+// Linux's definitions, whose types the code below is written against
+#undef RTA_LENGTH
+#undef RTA_OK
+#undef RTA_PAYLOAD
+#define RTA_LENGTH(len)	(RTA_ALIGN(sizeof(struct rtattr)) + (len))
+#define RTA_OK(rta,len) ((len) >= (int)sizeof(struct rtattr) && \
+	(rta)->rta_len >= sizeof(struct rtattr) && \
+	(rta)->rta_len <= (len))
+#define RTA_PAYLOAD(rta) ((int)((rta)->rta_len) - RTA_LENGTH(0))
 #endif
 
 bool nlroutes(cJSON *routes, const bool detailed);

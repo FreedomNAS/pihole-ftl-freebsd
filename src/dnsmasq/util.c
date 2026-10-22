@@ -896,7 +896,10 @@ void close_fds(long max_fd, int spare1, int spare2, int spare3)
   /* fallback, dumb code. */
   for (max_fd--; max_fd >= 0; max_fd--)
     if (max_fd != STDOUT_FILENO && max_fd != STDERR_FILENO && max_fd != STDIN_FILENO &&
-	max_fd != spare1 && max_fd != spare2 && max_fd != spare3)
+	max_fd != spare1 && max_fd != spare2 && max_fd != spare3 &&
+	/****** Pi-hole modification ******/
+	!is_shm_fd(max_fd))
+	/**********************************/
       close(max_fd);
 }
 

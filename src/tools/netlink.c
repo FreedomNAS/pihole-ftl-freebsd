@@ -278,6 +278,7 @@ static int nlparsemsg_route(struct rtmsg *rt, void *buf, size_t len, cJSON *rout
 				break;
 			}
 
+#ifdef __linux__
 			case RTA_METRICS: // nested RTAX_* route metrics
 			{
 				if(!detailed)
@@ -301,6 +302,7 @@ static int nlparsemsg_route(struct rtmsg *rt, void *buf, size_t len, cJSON *rout
 				cJSON_AddItemToObject(route, rtaTypeToString(rta->rta_type), metrics);
 				break;
 			}
+#endif
 
 			case RTA_TTL_PROPAGATE: // propagate TTL
 			case RTA_IP_PROTO: // IP protocol
@@ -395,6 +397,7 @@ static int nlparsemsg_route(struct rtmsg *rt, void *buf, size_t len, cJSON *rout
 				break;
 			}
 
+#ifdef __linux__
 			case RTA_MFC_STATS: // multicast forwarding cache statistics
 			{
 				if(!detailed)
@@ -407,7 +410,9 @@ static int nlparsemsg_route(struct rtmsg *rt, void *buf, size_t len, cJSON *rout
 				cJSON_AddNumberToObject(route, "mfcs_wrong_if", mfc->mfcs_wrong_if);
 				break;
 			}
+#endif
 
+#ifdef __linux__
 			case RTA_CACHEINFO:
 			{
 				if(!detailed)
@@ -428,6 +433,7 @@ static int nlparsemsg_route(struct rtmsg *rt, void *buf, size_t len, cJSON *rout
 				cJSON_AddNumberToObject(route, "used", ci->rta_used);
 				break;
 			}
+#endif
 
 			default:
 			{
@@ -1205,6 +1211,7 @@ static int nlparsemsg_link(struct ifinfomsg *ifi, void *buf, size_t len, cJSON *
 				break;
 			}
 
+#ifdef __linux__
 			case IFLA_VFINFO_LIST:
 			{
 				if(!detailed)
@@ -1268,7 +1275,9 @@ static int nlparsemsg_link(struct ifinfomsg *ifi, void *buf, size_t len, cJSON *
 
 				break;
 			}
+#endif
 
+#ifdef __linux__
 			case IFLA_EVENT:
 			{
 				if(!detailed)
@@ -1286,7 +1295,9 @@ static int nlparsemsg_link(struct ifinfomsg *ifi, void *buf, size_t len, cJSON *
 					cJSON_AddNumberToObject(link, "event", event);
 				break;
 			}
+#endif
 
+#ifdef __linux__
 			case IFLA_AF_SPEC:
 			{
 				if(!detailed)
@@ -1323,6 +1334,7 @@ static int nlparsemsg_link(struct ifinfomsg *ifi, void *buf, size_t len, cJSON *
 				cJSON_AddItemToObject(link, "af_specs", af_specs);
 				break;
 			}
+#endif
 
 			case IFLA_XDP:
 				// Parsing XDP needs a full BPF program

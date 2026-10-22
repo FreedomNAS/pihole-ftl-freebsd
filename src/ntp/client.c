@@ -275,6 +275,7 @@ static bool settime_skew(const double offset)
 	// reference using adjtimex() it will update a designated RTC
 	// periodically every 11 minutes.
 
+#ifdef __linux__
 	struct timex tx = { 0 };
 	tx.offset = 1000000 * offset;
 	tx.modes = ADJ_OFFSET_SINGLESHOT;
@@ -282,6 +283,15 @@ static bool settime_skew(const double offset)
 	log_debug(DEBUG_NTP, "Gradually adjusting system time by %"PRId64" us", (int64_t)tx.offset);
 
 	if(adjtimex(&tx) < 0)
+#else
+	// adjtime() slews the clock the way ADJ_OFFSET_SINGLESHOT does
+	const int64_t usec = (int64_t)(1000000 * offset);
+	struct timeval delta = { .tv_sec = usec / 1000000, .tv_usec = usec % 1000000 };
+
+	log_debug(DEBUG_NTP, "Gradually adjusting system time by %"PRId64" us", usec);
+
+	if(adjtime(&delta, NULL) < 0)
+#endif
 	{
 		char errbuf[1024];
 		strncpy(errbuf, "Failed to adjust time during NTP sync: ", sizeof(errbuf));

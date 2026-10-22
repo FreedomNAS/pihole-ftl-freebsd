@@ -55,7 +55,11 @@
 #include <netdb.h>
 #include <errno.h>
 #include <pthread.h>
+#ifdef __linux__
 #include <sys/prctl.h>
+#else
+#include "compat/prctl.h"
+#endif
 #include <pwd.h>
 // syslog
 #include <syslog.h>
@@ -67,7 +71,14 @@
 #include <assert.h>
 
 // Define MIN and MAX macros, use them only when x and y are of the same type
+#ifndef MAX
 #define MAX(x,y) (((x) > (y)) ? (x) : (y))
+#endif
+
+// Linux-only errno value, never returned elsewhere
+#ifndef ENOKEY
+#define ENOKEY 126
+#endif
 // MIN(x,y) is already defined in dnsmasq.h
 
 // Number of elements in an array

@@ -13,6 +13,15 @@
 
 #include "ntp/ntp.h"
 
+#ifndef __linux__
+// The kernel writes the system time back to the RTC whenever it is set, so
+// there is nothing left to do here
+bool ntp_sync_rtc(void)
+{
+	return true;
+}
+#else
+
 // ioctl()
 #include <sys/ioctl.h>
 // RTC
@@ -318,3 +327,4 @@ bool ntp_sync_rtc(void)
 
 	return true;
 }
+#endif // __linux__
