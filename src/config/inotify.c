@@ -9,6 +9,7 @@
 *  Please see LICENSE file for your rights under this license. */
 
 #include "config/inotify.h"
+#include "paths.h"
 #include "FTL.h"
 #include "log.h"
 #include <sys/inotify.h>
@@ -24,7 +25,7 @@
 // free()
 #include <stdlib.h>
 
-#define WATCHDIR "/etc/pihole"
+#define WATCHDIR PIHOLE_CONFDIR
 
 static int inotify_fd = -1;
 static int inotify_wd = -1;

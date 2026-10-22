@@ -20,6 +20,7 @@
 
 // enum privacy_level
 #include "enums.h"
+#include "paths.h"
 #include <stdbool.h>
 // typedef int16_t
 #include <sys/types.h>
@@ -36,7 +37,7 @@
 // enum web_theme
 #include "api/theme.h"
 
-#define CONFIG_DIR "/etc/pihole"
+#define CONFIG_DIR PIHOLE_CONFDIR
 #define GLOBALTOMLPATH CONFIG_DIR"/pihole.toml"
 
 // This static string represents an unchanged password
@@ -46,13 +47,13 @@
 #define VALIDATOR_ERRBUF_LEN 256
 
 // Location of the legacy (pre-v6.0) config file
-#define GLOBALCONFFILE_LEGACY "/etc/pihole/pihole-FTL.conf"
+#define GLOBALCONFFILE_LEGACY PIHOLE_CONFDIR "/pihole-FTL.conf"
 
 // Migration target for the legacy (pre-v6.0) config file
-#define MIGRATION_TARGET_V6 "/etc/pihole/migration_backup_v6"
+#define MIGRATION_TARGET_V6 PIHOLE_CONFDIR "/migration_backup_v6"
 
 // Location of the legacy (pre-v6.0) setupVars config file
-#define SETUPVARS_CONF "/etc/pihole/setupVars.conf"
+#define SETUPVARS_CONF PIHOLE_CONFDIR "/setupVars.conf"
 
 union conf_value {
 	bool b;                                     // boolean value

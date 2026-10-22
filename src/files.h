@@ -11,6 +11,7 @@
 #define FILE_H
 
 #include <stdbool.h>
+#include "paths.h"
 #include <sys/stat.h>
 // setmntent()
 #include "compat/mntent.h"
@@ -20,7 +21,7 @@
 #include <pwd.h>
 
 #define MAX_ROTATIONS 15
-#define BACKUP_DIR "/etc/pihole/config_backups"
+#define BACKUP_DIR PIHOLE_CONFDIR "/config_backups"
 
 bool in_pihole_dir(const char *path);
 bool chmod_file(const char *filename, const mode_t mode);

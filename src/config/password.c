@@ -9,6 +9,7 @@
 *  Please see LICENSE file for your rights under this license. */
 
 #include "FTL.h"
+#include "paths.h"
 // open(), O_NOFOLLOW
 #include <fcntl.h>
 #include "log.h"
@@ -52,7 +53,7 @@
 // sufficient access to the memory (ptrace, swapfile) would also have access to
 // the password file. Leaking the password after exit is not a concern as a new
 // password is generated on every start.
-#define CLI_PW_FILE "/etc/pihole/cli_pw"
+#define CLI_PW_FILE PIHOLE_CONFDIR "/cli_pw"
 static char *cli_password = NULL;
 
 // Convert RAW data into hex representation

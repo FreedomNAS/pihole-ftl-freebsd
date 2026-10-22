@@ -11,6 +11,7 @@
 // DNSMASQ COPYRIGHT
 #define FTLDNS
 #include "dnsmasq/dnsmasq.h"
+#include "paths.h"
 #undef __USE_XOPEN
 
 #include <nettle/bignum.h>
@@ -493,9 +494,9 @@ void parse_args(int argc, char *argv[])
 		if(argc < 3 || argc > 5)
 		{
 			printf("Usage: %s --gen-x509 <output file> [<domain>] [rsa]\n", argv[0]);
-			printf("Example:          %s --gen-x509 /etc/pihole/tls.pem\n", argv[0]);
-			printf(" with domain:     %s --gen-x509 /etc/pihole/tls.pem pi.hole\n", argv[0]);
-			printf(" RSA with domain: %s --gen-x509 /etc/pihole/tls.pem nanopi.lan rsa\n", argv[0]);
+			printf("Example:          %s --gen-x509 " PIHOLE_CONFDIR "/tls.pem\n", argv[0]);
+			printf(" with domain:     %s --gen-x509 " PIHOLE_CONFDIR "/tls.pem pi.hole\n", argv[0]);
+			printf(" RSA with domain: %s --gen-x509 " PIHOLE_CONFDIR "/tls.pem nanopi.lan rsa\n", argv[0]);
 			exit(EXIT_FAILURE);
 		}
 		// Read config
@@ -524,8 +525,8 @@ void parse_args(int argc, char *argv[])
 		if(argc > 4)
 		{
 			printf("Usage: %s %s [<input file>] [<domain>]\n", argv[0], argv[1]);
-			printf("Example: %s %s /etc/pihole/tls.pem\n", argv[0], argv[1]);
-			printf(" with domain: %s %s /etc/pihole/tls.pem pi.hole\n", argv[0], argv[1]);
+			printf("Example: %s %s " PIHOLE_CONFDIR "/tls.pem\n", argv[0], argv[1]);
+			printf(" with domain: %s %s " PIHOLE_CONFDIR "/tls.pem pi.hole\n", argv[0], argv[1]);
 			exit(EXIT_FAILURE);
 		}
 

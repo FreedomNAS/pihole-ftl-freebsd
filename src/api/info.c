@@ -9,6 +9,7 @@
 *  Please see LICENSE file for your rights under this license. */
 
 #include "FTL.h"
+#include "paths.h"
 #include "webserver/http-common.h"
 #include "webserver/json_macros.h"
 #include "api/api.h"
@@ -58,7 +59,7 @@
 // timer_elapsed_msec()
 #include "timers.h"
 
-#define VERSIONS_FILE "/etc/pihole/versions"
+#define VERSIONS_FILE PIHOLE_CONFDIR "/versions"
 
 int api_info_client(struct ftl_conn *api)
 {

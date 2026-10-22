@@ -9,6 +9,7 @@
 *  Please see LICENSE file for your rights under this license. */
 
 #include "FTL.h"
+#include "paths.h"
 // isalnum(), isdigit()
 #include <ctype.h>
 // inet_pton()
@@ -199,14 +200,14 @@ const char *generate_teleporter_zip(mz_zip_archive *zip, char filename[128], voi
 
 	// Add /etc/pihole/dhcp.lease to the ZIP archive if it exists
 	file_comment = "DHCP leases file";
-	file_path = "/etc/pihole/dhcp.leases";
+	file_path = PIHOLE_CONFDIR "/dhcp.leases";
 	if(file_exists(file_path) && !mz_zip_writer_add_file(zip, file_path+1, file_path, file_comment, (uint16_t)strlen(file_comment), MZ_BEST_COMPRESSION))
 	{
 		mz_zip_writer_end(zip);
-		return "Failed to add /etc/pihole/dhcp.leases to heap ZIP archive!";
+		return "Failed to add " PIHOLE_CONFDIR "/dhcp.leases to heap ZIP archive!";
 	}
 
-	const char *directory = "/etc/dnsmasq.d";
+	const char *directory = DNSMASQ_D_DIR;
 	if(directory_exists(directory))
 	{
 		// Loop over all files and add them to the ZIP archive

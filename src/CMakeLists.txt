@@ -199,6 +199,26 @@ if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
     link_directories(/usr/local/lib)
 endif()
 
+# Installation directories (src/paths.h), following the platform's layout
+if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+    set(PIHOLE_CONFDIR_DEFAULT "/usr/local/etc/pihole")
+    set(PIHOLE_WEBROOT_DEFAULT "/usr/local/www/pihole")
+    set(DNSMASQ_D_DIR_DEFAULT "/usr/local/etc/dnsmasq.d")
+else()
+    set(PIHOLE_CONFDIR_DEFAULT "/etc/pihole")
+    set(PIHOLE_WEBROOT_DEFAULT "/var/www/html")
+    set(DNSMASQ_D_DIR_DEFAULT "/etc/dnsmasq.d")
+endif()
+set(PIHOLE_CONFDIR "${PIHOLE_CONFDIR_DEFAULT}" CACHE STRING "Configuration and database directory")
+set(PIHOLE_LOGDIR "/var/log/pihole" CACHE STRING "Log directory")
+set(PIHOLE_WEBROOT "${PIHOLE_WEBROOT_DEFAULT}" CACHE STRING "Document root of the web interface")
+set(DNSMASQ_D_DIR "${DNSMASQ_D_DIR_DEFAULT}" CACHE STRING "Additional dnsmasq configuration directory")
+add_compile_definitions(
+    PIHOLE_CONFDIR="${PIHOLE_CONFDIR}"
+    PIHOLE_LOGDIR="${PIHOLE_LOGDIR}"
+    PIHOLE_WEBROOT="${PIHOLE_WEBROOT}"
+    DNSMASQ_D_DIR="${DNSMASQ_D_DIR}")
+
 # Do we want to compile a statically linked executable?
 if(DEFINED ENV{STATIC})
     if($ENV{STATIC} STREQUAL "true")
@@ -470,7 +490,7 @@ if(BUILD_TXT_STAT_REGRESSION)
             ${PROJECT_SOURCE_DIR}/src/dnsmasq)
     target_compile_definitions(txt_stat_regression PRIVATE
             VERSION=\"${DNSMASQ_VERSION}\"
-            CONFFILE=\"/etc/pihole/dnsmasq.conf\"
+            CONFFILE=\"${PIHOLE_CONFDIR}/dnsmasq.conf\"
             HAVE_POLL_H)
 
     # Optional ASan/UBSan instrumentation for local runs:

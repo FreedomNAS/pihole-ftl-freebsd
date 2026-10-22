@@ -10,6 +10,7 @@
 
 #define FTLDNS
 #include "dnsmasq/dnsmasq.h"
+#include "paths.h"
 #undef __USE_XOPEN
 #include "FTL.h"
 #include "enums.h"
@@ -3755,7 +3756,7 @@ static void chown_pihole_own_dir(const char *path, struct passwd *pwd)
 	if(in_pihole_dir(path))
 		chown_pihole(path, pwd);
 	else
-		log_warn("Not changing ownership of %s, it is outside of /etc/pihole and /var/log/pihole", path);
+		log_warn("Not changing ownership of %s, it is outside of " PIHOLE_CONFDIR " and " PIHOLE_LOGDIR, path);
 }
 
 void FTL_fork_and_bind_sockets(struct passwd *ent_pw, bool dnsmasq_start)

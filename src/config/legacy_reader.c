@@ -9,6 +9,7 @@
 *  Please see LICENSE file for your rights under this license. */
 
 #include "FTL.h"
+#include "paths.h"
 #include "legacy_reader.h"
 #include "config.h"
 #include "config/setupVars.h"
@@ -74,7 +75,7 @@ bool getLogFilePathLegacy(struct config *conf, FILE *fp)
 			free(conf->files.log.ftl.v.s);
 
 		// Use standard path if no custom path was obtained from the config file
-		conf->files.log.ftl.v.s = strdup("/var/log/pihole/FTL.log");
+		conf->files.log.ftl.v.s = strdup(PIHOLE_LOGDIR "/FTL.log");
 		conf->files.log.ftl.t = CONF_STRING_ALLOCATED;
 
 		// Test if memory allocation was successful

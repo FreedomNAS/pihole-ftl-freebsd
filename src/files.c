@@ -9,6 +9,7 @@
 *  Please see LICENSE file for your rights under this license. */
 
 #include "FTL.h"
+#include "paths.h"
 #include "files.h"
 #include "compat/selfexe.h"
 #include "config/config.h"
@@ -55,8 +56,8 @@ bool in_pihole_dir(const char *path)
 		return false;
 
 	const size_t dirlen = slash - path;
-	return (dirlen == strlen("/etc/pihole") && strncmp(path, "/etc/pihole", dirlen) == 0) ||
-	       (dirlen == strlen("/var/log/pihole") && strncmp(path, "/var/log/pihole", dirlen) == 0);
+	return (dirlen == strlen(PIHOLE_CONFDIR) && strncmp(path, PIHOLE_CONFDIR, dirlen) == 0) ||
+	       (dirlen == strlen(PIHOLE_LOGDIR) && strncmp(path, PIHOLE_LOGDIR, dirlen) == 0);
 }
 
 // chmod_file() changes the file mode bits of a given regular file according
@@ -66,7 +67,7 @@ bool chmod_file(const char *filename, const mode_t mode)
 {
 	if(geteuid() == 0 && !in_pihole_dir(filename))
 	{
-		log_warn("Not changing mode of %s, it is outside of /etc/pihole and /var/log/pihole", filename);
+		log_warn("Not changing mode of %s, it is outside of " PIHOLE_CONFDIR " and " PIHOLE_LOGDIR, filename);
 		return false;
 	}
 

@@ -9,6 +9,7 @@
 *  Please see LICENSE file for your rights under this license. */
 
 #include "FTL.h"
+#include "paths.h"
 #include "config/config.h"
 #include "config/toml_reader.h"
 #include "config/toml_writer.h"
@@ -785,7 +786,7 @@ void initConfig(struct config *conf)
 
 	// sub-struct dns.rate_limit
 	conf->dns.rateLimit.count.k = "dns.rateLimit.count";
-	conf->dns.rateLimit.count.h = "Rate-limited queries are answered with a REFUSED reply and not further processed by FTL.\n\n The default settings for FTL's rate-limiting are to permit no more than 1000 queries in 60 seconds. Both numbers can be customized independently. It is important to note that rate-limiting is happening on a per-client basis. Other clients can continue to use FTL while rate-limited clients are short-circuited at the same time.\n\n For this setting, both numbers, the maximum number of queries within a given time, and the length of the time interval (seconds) have to be specified. For instance, if you want to set a rate limit of 1 query per hour, the option should look like dns.rateLimit.count=1 and dns.rateLimit.interval=3600. The time interval is relative to when FTL has finished starting (start of the daemon + possible delay by DELAY_STARTUP) then it will advance in steps of the rate-limiting interval. If a client reaches the maximum number of queries it will be blocked until the end of the current interval. This will be logged to /var/log/pihole/FTL.log, e.g. Rate-limiting 10.0.1.39 for at least 44 seconds. If the client continues to send queries while being blocked already and this number of queries during the blocking exceeds the limit the client will continue to be blocked until the end of the next interval (FTL.log will contain lines like Still rate-limiting 10.0.1.39 as it made additional 5007 queries). As soon as the client requests less than the set limit, it will be unblocked (Ending rate-limitation of 10.0.1.39).\n\n Rate-limiting may be disabled altogether by setting both values to zero (this results in the same behavior as before FTL v5.7).\n\n How many queries are permitted...";
+	conf->dns.rateLimit.count.h = "Rate-limited queries are answered with a REFUSED reply and not further processed by FTL.\n\n The default settings for FTL's rate-limiting are to permit no more than 1000 queries in 60 seconds. Both numbers can be customized independently. It is important to note that rate-limiting is happening on a per-client basis. Other clients can continue to use FTL while rate-limited clients are short-circuited at the same time.\n\n For this setting, both numbers, the maximum number of queries within a given time, and the length of the time interval (seconds) have to be specified. For instance, if you want to set a rate limit of 1 query per hour, the option should look like dns.rateLimit.count=1 and dns.rateLimit.interval=3600. The time interval is relative to when FTL has finished starting (start of the daemon + possible delay by DELAY_STARTUP) then it will advance in steps of the rate-limiting interval. If a client reaches the maximum number of queries it will be blocked until the end of the current interval. This will be logged to " PIHOLE_LOGDIR "/FTL.log, e.g. Rate-limiting 10.0.1.39 for at least 44 seconds. If the client continues to send queries while being blocked already and this number of queries during the blocking exceeds the limit the client will continue to be blocked until the end of the next interval (FTL.log will contain lines like Still rate-limiting 10.0.1.39 as it made additional 5007 queries). As soon as the client requests less than the set limit, it will be unblocked (Ending rate-limitation of 10.0.1.39).\n\n Rate-limiting may be disabled altogether by setting both values to zero (this results in the same behavior as before FTL v5.7).\n\n How many queries are permitted...";
 	conf->dns.rateLimit.count.a = cJSON_CreateStringReference("A positive integer value");
 	conf->dns.rateLimit.count.t = CONF_UINT;
 	conf->dns.rateLimit.count.d.ui = 1000;
@@ -1164,7 +1165,7 @@ void initConfig(struct config *conf)
 	conf->webserver.tls.cert.a = cJSON_CreateStringReference("A valid TLS certificate file (*.pem)");
 	conf->webserver.tls.cert.f = FLAG_RESTART_FTL;
 	conf->webserver.tls.cert.t = CONF_STRING;
-	conf->webserver.tls.cert.d.s = (char*)"/etc/pihole/tls.pem";
+	conf->webserver.tls.cert.d.s = (char*)PIHOLE_CONFDIR "/tls.pem";
 	conf->webserver.tls.cert.c = validate_filepath_empty;
 
 	// sub-struct paths
@@ -1173,7 +1174,7 @@ void initConfig(struct config *conf)
 	conf->webserver.paths.webroot.a = cJSON_CreateStringReference("A valid absolute path not containing \""CONFIG_DIR"\"");
 	conf->webserver.paths.webroot.t = CONF_STRING;
 	conf->webserver.paths.webroot.f = FLAG_RESTART_FTL | FLAG_API_READ_ONLY;
-	conf->webserver.paths.webroot.d.s = (char*)"/var/www/html";
+	conf->webserver.paths.webroot.d.s = (char*)PIHOLE_WEBROOT;
 	conf->webserver.paths.webroot.c = validate_webroot;
 
 	conf->webserver.paths.webhome.k = "webserver.paths.webhome";
@@ -1268,7 +1269,7 @@ void initConfig(struct config *conf)
 	conf->webserver.api.app_sudo.c = validate_stub; // Only type-based checking
 
 	conf->webserver.api.cli_pw.k = "webserver.api.cli_pw";
-	conf->webserver.api.cli_pw.h = "Should FTL create a temporary CLI password?\n\n This password is stored in clear in /etc/pihole and can be used by the CLI (pihole ...  commands) to authenticate against the API. Note that the password is only valid for the current session and regenerated on each FTL restart. Sessions initiated with this password cannot modify the Pi-hole configuration (change passwords, etc.) for security reasons but can still use the API to query data and manage lists.";
+	conf->webserver.api.cli_pw.h = "Should FTL create a temporary CLI password?\n\n This password is stored in clear in " PIHOLE_CONFDIR " and can be used by the CLI (pihole ...  commands) to authenticate against the API. Note that the password is only valid for the current session and regenerated on each FTL restart. Sessions initiated with this password cannot modify the Pi-hole configuration (change passwords, etc.) for security reasons but can still use the API to query data and manage lists.";
 	conf->webserver.api.cli_pw.t = CONF_BOOL;
 	conf->webserver.api.cli_pw.f = FLAG_RESTART_FTL;
 	conf->webserver.api.cli_pw.d.b = true;
@@ -1345,7 +1346,7 @@ void initConfig(struct config *conf)
 	conf->files.database.a = cJSON_CreateStringReference("Any FTL database");
 	conf->files.database.t = CONF_STRING;
 	conf->files.database.f = FLAG_RESTART_FTL;
-	conf->files.database.d.s = (char*)"/etc/pihole/pihole-FTL.db";
+	conf->files.database.d.s = (char*)PIHOLE_CONFDIR "/pihole-FTL.db";
 	conf->files.database.c = validate_filepath;
 
 	conf->files.tmp_db.k = "files.tmp_db";
@@ -1353,7 +1354,7 @@ void initConfig(struct config *conf)
 	conf->files.tmp_db.a = cJSON_CreateStringReference("Any FTL database");
 	conf->files.tmp_db.t = CONF_STRING;
 	conf->files.tmp_db.f = FLAG_RESTART_FTL;
-	conf->files.tmp_db.d.s = (char*)"/etc/pihole/pihole-tmp.db";
+	conf->files.tmp_db.d.s = (char*)PIHOLE_CONFDIR "/pihole-tmp.db";
 	conf->files.tmp_db.c = validate_filepath;
 
 	conf->files.gravity.k = "files.gravity";
@@ -1361,7 +1362,7 @@ void initConfig(struct config *conf)
 	conf->files.gravity.a = cJSON_CreateStringReference("Any Pi-hole gravity database");
 	conf->files.gravity.t = CONF_STRING;
 	conf->files.gravity.f = FLAG_RESTART_FTL;
-	conf->files.gravity.d.s = (char*)"/etc/pihole/gravity.db";
+	conf->files.gravity.d.s = (char*)PIHOLE_CONFDIR "/gravity.db";
 	conf->files.gravity.c = validate_filepath;
 
 	conf->files.gravity_tmp.k = "files.gravity_tmp";
@@ -1376,7 +1377,7 @@ void initConfig(struct config *conf)
 	conf->files.macvendor.h = "The database containing MAC -> Vendor information for the network table";
 	conf->files.macvendor.a = cJSON_CreateStringReference("Any Pi-hole macvendor database");
 	conf->files.macvendor.t = CONF_STRING;
-	conf->files.macvendor.d.s = (char*)"/etc/pihole/macvendor.db";
+	conf->files.macvendor.d.s = (char*)PIHOLE_CONFDIR "/macvendor.db";
 	conf->files.macvendor.c = validate_filepath;
 
 	conf->files.pcap.k = "files.pcap";
@@ -1395,7 +1396,7 @@ void initConfig(struct config *conf)
 	conf->files.log.dnsmasq.a = cJSON_CreateStringReference("Any writable file");
 	conf->files.log.dnsmasq.t = CONF_STRING;
 	conf->files.log.dnsmasq.f = FLAG_RESTART_FTL;
-	conf->files.log.dnsmasq.d.s = (char*)"/var/log/pihole/pihole.log";
+	conf->files.log.dnsmasq.d.s = (char*)PIHOLE_LOGDIR "/pihole.log";
 	conf->files.log.dnsmasq.c = validate_filepath_dash;
 
 	conf->files.log.webserver.k = "files.log.webserver";
@@ -1403,7 +1404,7 @@ void initConfig(struct config *conf)
 	conf->files.log.webserver.a = cJSON_CreateStringReference("Any writable file");
 	conf->files.log.webserver.t = CONF_STRING;
 	conf->files.log.webserver.f = FLAG_RESTART_FTL;
-	conf->files.log.webserver.d.s = (char*)"/var/log/pihole/webserver.log";
+	conf->files.log.webserver.d.s = (char*)PIHOLE_LOGDIR "/webserver.log";
 	conf->files.log.webserver.c = validate_filepath;
 
 	// struct misc
@@ -1445,7 +1446,7 @@ void initConfig(struct config *conf)
 	conf->misc.addr2line.c = validate_stub; // Only type-based checking
 
 	conf->misc.etc_dnsmasq_d.k = "misc.etc_dnsmasq_d";
-	conf->misc.etc_dnsmasq_d.h = "Should FTL load additional dnsmasq configuration files from /etc/dnsmasq.d/?\n\n Warning: This is an advanced setting and should only be used with care.\n Incorrectly formatted or config files specifying options which can only be defined once can result in conflicts with the automatic configuration of Pi-hole (see "DNSMASQ_PH_CONFIG") and may stop DNS resolution from working.";
+	conf->misc.etc_dnsmasq_d.h = "Should FTL load additional dnsmasq configuration files from " DNSMASQ_D_DIR "/?\n\n Warning: This is an advanced setting and should only be used with care.\n Incorrectly formatted or config files specifying options which can only be defined once can result in conflicts with the automatic configuration of Pi-hole (see "DNSMASQ_PH_CONFIG") and may stop DNS resolution from working.";
 	conf->misc.etc_dnsmasq_d.t = CONF_BOOL;
 	conf->misc.etc_dnsmasq_d.f = FLAG_RESTART_FTL;
 	conf->misc.etc_dnsmasq_d.d.b = false;
@@ -1653,7 +1654,7 @@ void initConfig(struct config *conf)
 	conf->debug.config.c = validate_stub; // Only type-based checking
 
 	conf->debug.inotify.k = "debug.inotify";
-	conf->debug.inotify.h = "Debug monitoring of /etc/pihole filesystem events";
+	conf->debug.inotify.h = "Debug monitoring of " PIHOLE_CONFDIR " filesystem events";
 	conf->debug.inotify.t = CONF_BOOL;
 	conf->debug.inotify.d.b = false;
 	conf->debug.inotify.c = validate_stub; // Only type-based checking
@@ -2115,7 +2116,7 @@ bool getLogFilePath(bool try_read)
 	config.files.log.ftl.h = "The location of FTL's log file";
 	config.files.log.ftl.a = cJSON_CreateStringReference("any writable file");
 	config.files.log.ftl.t = CONF_STRING;
-	config.files.log.ftl.d.s = (char*)"/var/log/pihole/FTL.log";
+	config.files.log.ftl.d.s = (char*)PIHOLE_LOGDIR "/FTL.log";
 	config.files.log.ftl.v.s = config.files.log.ftl.d.s;
 	config.files.log.ftl.c = validate_filepath;
 	config.files.log.ftl.f = FLAG_FTL_LOG;
