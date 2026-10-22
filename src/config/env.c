@@ -38,7 +38,10 @@ struct env_item
 
 static struct env_item *env_list = NULL;
 
+#ifndef __linux__
+// Declared by <unistd.h> on Linux (_GNU_SOURCE), not on FreeBSD
 extern char **environ;
+#endif
 
 void getEnvVars(void)
 {
