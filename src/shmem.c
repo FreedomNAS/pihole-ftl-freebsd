@@ -34,6 +34,12 @@
 #include "database/message-table.h"
 // struct lookup_table
 #include "lookup-table.h"
+#ifndef __linux__
+// parse_proc_meminfo()
+#include "procps.h"
+// sysinfo()
+#include "compat/sysinfo.h"
+#endif
 
 /// The version of shared memory used
 #define SHARED_MEMORY_VERSION 19
@@ -76,7 +82,12 @@ ASSERT_SHM_SIZE(ShmSettings,           152,    140,    140);
 ASSERT_SHM_SIZE(countersStruct,        356,    356,    356);
 
 /// The name of the shared memory. Use this when connecting to the shared memory.
+#ifdef __linux__
 #define SHMEM_PATH "/dev/shm"
+#else
+// POSIX shared memory is not a file system here, see get_dev_shm_usage()
+#define SHMEM_PATH "RAM + swap"
+#endif
 #define SHARED_LOCK_NAME "lock"
 #define SHARED_STRINGS_NAME "strings"
 #define SHARED_COUNTERS_NAME "counters"
@@ -358,10 +369,45 @@ static void shm_ensure_size(void);
 // FTL
 // The function returns the percentage of used memory. A human-readable string
 // is stored in the buffer passed to this function.
+#ifndef __linux__
+// POSIX shared memory lives in RAM and swap until both run out, there is no
+// tmpfs with its own size limit, so the space it fills is RAM plus swap
+static int get_shm_space_usage(char buffer[64])
+{
+	struct proc_meminfo mem = { 0 };
+	struct sysinfo info = { 0 };
+	if(!parse_proc_meminfo(&mem) || sysinfo(&info) != 0)
+	{
+		strncpy(buffer, strerror(errno), 64);
+		buffer[63] = '\0';
+		return 0;
+	}
+
+	const uint64_t swap_total = (uint64_t)info.totalswap * info.mem_unit;
+	const uint64_t swap_free = (uint64_t)info.freeswap * info.mem_unit;
+	const uint64_t size = (uint64_t)mem.total * 1024u + swap_total;
+	const uint64_t avail = (uint64_t)mem.avail * 1024u + swap_free;
+	const uint64_t used = size > avail ? size - avail : 0;
+
+	char prefix_size[2] = { 0 }, prefix_used[2] = { 0 };
+	double formatted_size = 0.0, formatted_used = 0.0;
+	format_memory_size(prefix_size, size, &formatted_size);
+	format_memory_size(prefix_used, used, &formatted_used);
+	snprintf(buffer, 64, "%.1f%sB used, %.1f%sB total",
+	         formatted_used, prefix_used, formatted_size, prefix_size);
+
+	return size > 0 ? (int)(used * 100 / size) : 0;
+}
+#endif
+
 static int get_dev_shm_usage(char buffer[64])
 {
 	char buffer2[64] = { 0 };
+#ifdef __linux__
 	const int percentage = get_path_usage(SHMEM_PATH, buffer2);
+#else
+	const int percentage = get_shm_space_usage(buffer2);
+#endif
 
 	// Generate human-readable "used by FTL" size
 	char prefix_FTL[2] = { 0 };
