@@ -9,7 +9,14 @@ getIPs() {
     local protocol
     protocol=$2
 
-    addresses="$(ip address show | sed "/${addr_type} /!d;s/^.*${addr_type} //g;s/\/.*$//g;")"
+    if [[ "$(uname -s)" == "FreeBSD" ]]; then
+        # Leave out 127.0.0.2 and up, which only stand in for the loopback
+        # network Linux answers on as a whole (test/run.sh), and link-local
+        # addresses, which come with a %scope
+        addresses="$(ifconfig -a "${addr_type}" | awk -v t="${addr_type}" '$1 == t && $2 !~ /^127\.0\.0\.([2-9]|[1-9][0-9]+)$/ && $2 !~ /%/ { print $2 }')"
+    else
+        addresses="$(ip address show | sed "/${addr_type} /!d;s/^.*${addr_type} //g;s/\/.*$//g;")"
+    fi
     if [ -n "${addresses}" ]; then
         while IFS= read -r addr ; do
             # Check if Pi-hole can use itself to block a domain

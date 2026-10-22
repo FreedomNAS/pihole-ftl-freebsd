@@ -10,7 +10,12 @@ mkdir -p /var/lib/powerdns/
 rm -f /var/lib/powerdns/pdns.sqlite3*
 
 # Install config files
-if [ -d /etc/powerdns ]; then
+if [ -d /usr/local/etc/pdns ]; then
+  # FreeBSD; the recursor's Lua script below still goes to /etc/pdns
+  cp test/pdns/pdns.conf /usr/local/etc/pdns/pdns.conf
+  RECURSOR_CONF=/usr/local/etc/pdns/recursor.conf
+  mkdir -p /etc/pdns
+elif [ -d /etc/powerdns ]; then
   # Debian
   cp test/pdns/pdns.conf /etc/powerdns/pdns.conf
   RECURSOR_CONF=/etc/powerdns/recursor.conf
@@ -38,6 +43,9 @@ if [ -f /usr/share/doc/pdns-backend-sqlite3/schema.sqlite3.sql ]; then
 elif [ -f /usr/share/doc/pdns/schema.sqlite3.sql ]; then
   # Alpine
   ./pihole-FTL sqlite3 /var/lib/powerdns/pdns.sqlite3 < /usr/share/doc/pdns/schema.sqlite3.sql
+elif [ -f /usr/local/share/doc/pdns/schema.sqlite3.sql ]; then
+  # FreeBSD
+  ./pihole-FTL sqlite3 /var/lib/powerdns/pdns.sqlite3 < /usr/local/share/doc/pdns/schema.sqlite3.sql
 else
   echo "Error: powerDNS SQL schema not found"
   exit 1
@@ -222,7 +230,7 @@ echo "********* Done installing PowerDNS configuration **********"
 for proc in pdns_server pdns_recursor; do
   killall "$proc" 2> /dev/null || true
   for _ in 1 2 3 4 5 6 7 8 9 10; do
-    pidof "$proc" > /dev/null 2>&1 || break
+    pgrep -x "$proc" > /dev/null 2>&1 || break
     sleep 0.2
   done
   killall -9 "$proc" 2> /dev/null || true
@@ -248,6 +256,12 @@ wait_for_pdns() {
   echo "ERROR: ${name} did not answer on port ${port} within 30 s" >&2
   return 1
 }
+
+# The FreeBSD package runs the server as user pdns, which has to be able to
+# write its zone database
+if [ "$(uname -s)" = "FreeBSD" ]; then
+  chown -R pdns:pdns /var/lib/powerdns
+fi
 
 # Start authoritative pdns_server and wait for it to accept queries on
 # its configured port (5554) before continuing.

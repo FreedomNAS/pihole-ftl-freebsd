@@ -28,8 +28,13 @@ setup() {
 @test "A leftover world-readable CLI password file is replaced" {
   # test/run.sh leaves a 0666 cli_pw behind before FTL starts and keeps it open
   holder=$(cat /tmp/cli_pw_holder.pid)
-  run cat "/proc/${holder}/fd/0"
+  if [[ -e "/proc/${holder}/fd/0" ]]; then
+    run cat "/proc/${holder}/fd/0"
+  else
+    run cat /etc/cli_pw.stale
+  fi
   kill "${holder}"
+  rm -f /etc/cli_pw.stale
   assert_output "stale"
   run stat -c '%a' /etc/pihole/cli_pw
   assert_output "640"
@@ -38,7 +43,7 @@ setup() {
 }
 
 @test "Running a second instance is detected and prevented" {
-  run bash -c 'su pihole -s /bin/sh -c "./pihole-FTL -f"'
+  run bash -c 'as_pihole "./pihole-FTL -f"'
    assert_output --partial "CRIT: pihole-FTL is already running"
 }
 
@@ -235,8 +240,8 @@ setup() {
   run bash -c "grep -c \"There is no record for 00:11:22:33:44:55 in the client table\" /var/log/pihole/FTL.log"
   assert_line --index 0 "1"
   # The query arrives on lo, which takes precedence over enp0s123 from the
-  # network table. There is no client :lo, so the default group applies
-  run bash -c "grep -c \"Using in-memory interface :lo of 127.0.0.6\" /var/log/pihole/FTL.log"
+  # network table. There is no client :lo (lo0 on FreeBSD), so the default group applies
+  run bash -c "grep -c \"Using in-memory interface :${LO} of 127.0.0.6\" /var/log/pihole/FTL.log"
   assert_line --index 0 "1"
   run bash -c "grep -c \"Found database interface 127.0.0.6 -> enp0s123\" /var/log/pihole/FTL.log"
   assert_line --index 0 "0"
@@ -1276,7 +1281,7 @@ setup() {
   assert_success
   after="$(grep -c ^ /var/log/pihole/FTL.log)"
   run bash -c "sed -n \"${before},${after}p\" /var/log/pihole/FTL.log"
-  assert_line --partial "**** new UDP IPv4 query[A] query \"localhost\" from lo/${ipv4}#53 "
+  assert_line --partial "**** new UDP IPv4 query[A] query \"localhost\" from ${LO}/${ipv4}#53 "
 
   before="$(grep -c ^ /var/log/pihole/FTL.log)"
   run bash -c "dig localhost +short +subnet=${ipv6}/128 +ednsopt=65001:020000000001 @127.0.0.1"
@@ -1284,7 +1289,7 @@ setup() {
   assert_success
   after="$(grep -c ^ /var/log/pihole/FTL.log)"
   run bash -c "sed -n \"${before},${after}p\" /var/log/pihole/FTL.log"
-  assert_line --partial "**** new UDP IPv4 query[A] query \"localhost\" from lo/${ipv6}#53 "
+  assert_line --partial "**** new UDP IPv4 query[A] query \"localhost\" from ${LO}/${ipv6}#53 "
 
   kill -SIGRTMIN+5 "$(cat /run/pihole-FTL.pid)"
 
@@ -1320,13 +1325,18 @@ setup() {
 
 @test "Local interfaces are added to the network table" {
   # Use the first interface with a hardware address, fall back to lo
-  iface="lo"
-  for dir in /sys/class/net/*; do
-    [[ "$(basename "${dir}")" != "lo" && -s "${dir}/address" ]] || continue
-    iface="$(basename "${dir}")"
-    break
-  done
-  mac="$(cat "/sys/class/net/${iface}/address")"
+  if [[ "$(uname -s)" == "FreeBSD" ]]; then
+    iface="$(ifconfig -l ether | awk '{ print $1 }')"
+    mac="$(ifconfig "${iface}" ether | awk '$1 == "ether" { print $2 }')"
+  else
+    iface="lo"
+    for dir in /sys/class/net/*; do
+      [[ "$(basename "${dir}")" != "lo" && -s "${dir}/address" ]] || continue
+      iface="$(basename "${dir}")"
+      break
+    done
+    mac="$(cat "/sys/class/net/${iface}/address")"
+  fi
   addr="$(curl -s 127.0.0.1/api/network/interfaces | jq -r ".interfaces[] | select(.name == \"${iface}\") | .addresses[0].address")"
   [[ -n "${mac}" && -n "${addr}" && "${addr}" != "null" ]]
 
@@ -1562,7 +1572,7 @@ setup() {
   run bash -c "sed -n \"${before},${after}p\" /var/log/pihole/FTL.log"
 
   # Check for expected log lines
-  assert_line --partial "new UDP IPv4 non-query[type=0] \"opcode\" from lo/127.0.0.1"
+  assert_line --partial "new UDP IPv4 non-query[type=0] \"opcode\" from ${LO}/127.0.0.1"
   assert_line --partial "**** got cache reply: opcode is (null) "
 }
 
@@ -1582,7 +1592,7 @@ setup() {
   run bash -c "sed -n \"${before},${after}p\" /var/log/pihole/FTL.log"
 
   # Check for expected log lines
-  assert_line --partial "new TCP IPv4 non-query[type=0] \"opcode\" from lo/127.0.0.1"
+  assert_line --partial "new TCP IPv4 non-query[type=0] \"opcode\" from ${LO}/127.0.0.1"
   assert_line --partial "**** got cache reply: opcode is (null) "
 }
 
@@ -1857,7 +1867,8 @@ setup() {
   assert_failure 3
 
   run bash -c './pihole-FTL --config dns.revServers "[\"true,1.1.1.1,def,ghi\"]"'
-  assert_line --regexp --index 0 'New dnsmasq configuration is not valid \(.+resolve at line [[:digit:]]+ of /etc/pihole/dnsmasq.conf.temp: "rev-server=1.1.1.1,def"\), config remains unchanged'
+  # The reason is gai_strerror()'s, which differs between C libraries
+  assert_line --regexp --index 0 'New dnsmasq configuration is not valid \(.+(resolve|resolve server name|not known) at line [[:digit:]]+ of /etc/pihole/dnsmasq.conf.temp: "rev-server=1.1.1.1,def"\), config remains unchanged'
   assert_failure 3
 
   run bash -c './pihole-FTL --config webserver.api.excludeClients "[\".*\",\"$$$\",\"[[[\"]"'
@@ -1935,9 +1946,15 @@ setup() {
 
 @test "Config validation: a document root that resolves to the root is rejected" {
   # Lexically /proc/self/root is a directory of its own, but it is a link
-  # the kernel plants to /, so it has to be judged by where it leads
-  run bash -c './pihole-FTL --config webserver.paths.webroot /proc/self/root'
-  assert_line --index 0 'Invalid value: webserver.paths.webroot: "/proc/self/root" resolves to "/", which must not be "/" or overlap Pi-hole'"'"'s configuration directory ("/etc/pihole")'
+  # the kernel plants to /, so it has to be judged by where it leads.
+  # Without /proc (FreeBSD) a link of our own does the same
+  rootlink=/proc/self/root
+  if [[ ! -e "${rootlink}" ]]; then
+    rootlink=/tmp/webroot-root
+    ln -sfn / "${rootlink}"
+  fi
+  run bash -c "./pihole-FTL --config webserver.paths.webroot ${rootlink}"
+  assert_line --index 0 'Invalid value: webserver.paths.webroot: "'"${rootlink}"'" resolves to "/", which must not be "/" or overlap Pi-hole'"'"'s configuration directory ("/etc/pihole")'
   assert_failure 3
 
   # A link into the configuration directory is caught the same way

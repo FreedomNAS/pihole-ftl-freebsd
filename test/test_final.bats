@@ -357,7 +357,7 @@ load 'bats_helper.bash'
   assert_success
 
   logsize_restart=$(stat -c%s /var/log/pihole/FTL.log)
-  run bash -c "su pihole -s /bin/sh -c 'TZ=${tz} /home/pihole/pihole-FTL'"
+  run bash -c "as_pihole 'TZ=${tz} /home/pihole/pihole-FTL'"
   assert_success
   run bash -c "./pihole-FTL wait-for ' MB, deleted ' /var/log/pihole/FTL.log 60 $logsize_restart"
   logged=$status
@@ -394,7 +394,7 @@ load 'bats_helper.bash'
   # then move the new one in. It carries the same timestamp here, so only the
   # file itself tells the two apart
   logsize_restart=$(stat -c%s /var/log/pihole/FTL.log)
-  run bash -c 'su pihole -s /bin/sh -c /home/pihole/pihole-FTL'
+  run bash -c 'as_pihole /home/pihole/pihole-FTL'
   assert_success
   run bash -c "./pihole-FTL wait-for 'deny regex for' /var/log/pihole/FTL.log 30 $logsize_restart"
   assert_success
@@ -428,11 +428,15 @@ load 'bats_helper.bash'
   # Start FTL afresh so no record exists yet, and ask for a non-canonical
   # spelling first: the record must still answer the canonical name. Further
   # spellings (leading zeros, extra leading labels) must not add records
-  addr=$(ip -4 -o address show scope global | awk '{print $4}' | cut -d/ -f1 | head -n1)
+  if [[ "$(uname -s)" == "FreeBSD" ]]; then
+    addr=$(ifconfig -a inet | awk '$1 == "inet" && $2 !~ /^127\./ { print $2; exit }')
+  else
+    addr=$(ip -4 -o address show scope global | awk '{print $4}' | cut -d/ -f1 | head -n1)
+  fi
   [ -n "${addr}" ]
   IFS=. read -r a b c d <<< "${addr}"
   logsize_restart=$(stat -c%s /var/log/pihole/FTL.log)
-  run bash -c 'su pihole -s /bin/sh -c /home/pihole/pihole-FTL'
+  run bash -c 'as_pihole /home/pihole/pihole-FTL'
   assert_success
   run bash -c "./pihole-FTL wait-for ' -> Known forward destinations' /var/log/pihole/FTL.log 30 $logsize_restart"
   assert_success
@@ -462,7 +466,7 @@ load 'bats_helper.bash'
 
 @test "Raising misc.privacylevel at runtime hides known domains and clients in the database" {
   logsize_restart=$(stat -c%s /var/log/pihole/FTL.log)
-  run bash -c 'su pihole -s /bin/sh -c /home/pihole/pihole-FTL'
+  run bash -c 'as_pihole /home/pihole/pihole-FTL'
   assert_success
   run bash -c "./pihole-FTL wait-for ' -> Known forward destinations' /var/log/pihole/FTL.log 30 $logsize_restart"
   assert_success

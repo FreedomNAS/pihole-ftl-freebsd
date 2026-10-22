@@ -21,3 +21,19 @@ bats::on_failure() {
     printf "═══════════════════════════════════════════════════════════════════════════════\n"
     printf "\n"
 }
+
+# Runs a shell command as user pihole. FreeBSD's su has no -s (and -c names a
+# login class there), -m keeps the caller's shell instead
+as_pihole() {
+    if [[ "$(uname -s)" == "FreeBSD" ]]; then
+        su -m pihole -c "$1"
+    else
+        su pihole -s /bin/sh -c "$1"
+    fi
+}
+export -f as_pihole
+
+# Name of the loopback interface
+LO="lo"
+[[ "$(uname -s)" == "FreeBSD" ]] && LO="lo0"
+export LO

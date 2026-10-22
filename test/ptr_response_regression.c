@@ -3,6 +3,10 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netinet/in.h>
+// Not part of POSIX, so <netinet/in.h> may hide it under _POSIX_C_SOURCE
+#ifndef INADDR_LOOPBACK
+#define INADDR_LOOPBACK 0x7f000001
+#endif
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdbool.h>

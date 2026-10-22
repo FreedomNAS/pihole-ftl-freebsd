@@ -6,14 +6,59 @@ if [[ ${TEST} == "false" ]]; then
   exit 0
 fi
 
+FREEBSD=false
+[[ "$(uname -s)" == "FreeBSD" ]] && FREEBSD=true
+
 # Create pihole user if it does not exist
 if ! id -u pihole &> /dev/null; then
-  useradd -m -s /usr/sbin/nologin pihole
+  if ${FREEBSD}; then
+    pw useradd pihole -m -s /usr/sbin/nologin
+  else
+    useradd -m -s /usr/sbin/nologin pihole
+  fi
+fi
+
+# FTL keeps its PID file in /var/run on FreeBSD, the tests look in /run
+if ${FREEBSD} && [[ ! -e /run ]]; then
+  ln -s /var/run /run
+fi
+
+if ${FREEBSD}; then
+  # Linux answers on all of 127.0.0.0/8, FreeBSD only on the addresses
+  # lo0 has; the tests act as clients 127.0.0.2 and up
+  for i in $(seq 2 63); do
+    ifconfig lo0 inet "127.0.0.${i}/32" alias 2> /dev/null
+  done
+  # The tests use GNU stat, date, touch and sed (coreutils and gsed packages)
+  gnubin="$(mktemp -d)"
+  ln -s /usr/local/bin/gnustat "${gnubin}/stat"
+  for tool in date touch sed; do
+    ln -s "/usr/local/bin/g${tool}" "${gnubin}/${tool}"
+  done
+  # Newer dig prints "; (1 server found)" after its header, which shifts the
+  # line numbers the tests check
+  printf '#!/usr/bin/env bash\nset -o pipefail\n/usr/local/bin/dig "$@" | sed "/^; ([0-9]* servers* found)$/d"\n' > "${gnubin}/dig"
+  chmod +x "${gnubin}/dig"
+  export PATH="${gnubin}:${PATH}"
+
+  # bash knows no real-time signals here, neither by name nor by number:
+  # hand those to kill(1) for every test
+  FTL_SIGRTMIN="$(./pihole-FTL sigrtmin)"
+  export FTL_SIGRTMIN
+  kill() {
+    if [[ "${1}" =~ ^-SIGRTMIN(\+([0-9]+))?$ ]]; then
+      shift
+      /bin/kill -"$((FTL_SIGRTMIN + ${BASH_REMATCH[2]:-0}))" "$@"
+    else
+      builtin kill "$@"
+    fi
+  }
+  export -f kill
 fi
 
 # Kill possibly running pihole-FTL process
-while pidof -s pihole-FTL > /dev/null; do
-  pid="$(pidof -s pihole-FTL)"
+while pgrep -x pihole-FTL > /dev/null; do
+  pid="$(pgrep -x pihole-FTL | head -n 1)"
   echo "Terminating running pihole-FTL process with PID ${pid}"
   kill "$pid"
   sleep 1
@@ -21,6 +66,10 @@ done
 
 # Clean up possible old files from earlier test runs
 rm -rf /etc/pihole /etc/dnsmasq.d /var/log/pihole /dev/shm/FTL-*
+if ${FREEBSD}; then
+  # POSIX shared memory is not a file system there
+  posixshmcontrol ls | awk '$NF ~ /^\/FTL-/ { print $NF }' | xargs -r posixshmcontrol rm
+fi
 rm -f /tmp/dnsmasq_warnings /tmp/ftl_test_*.json
 
 # Create necessary directories and files
@@ -37,7 +86,12 @@ chown pihole:pihole /run/pihole-FTL.pid
 cp ./pihole-FTL /home/pihole/pihole-FTL
 chmod +x /home/pihole/pihole-FTL
 # Note: We cannot add CAP_NET_RAW and CAP_NET_ADMIN at this point
-setcap CAP_NET_BIND_SERVICE+eip /home/pihole/pihole-FTL
+if ${FREEBSD}; then
+  # No file capabilities: open the privileged ports to every user instead
+  sysctl net.inet.ip.portrange.reservedhigh=0
+else
+  setcap CAP_NET_BIND_SERVICE+eip /home/pihole/pihole-FTL
+fi
 
 # Prepare gravity database
 ./pihole-FTL sqlite3 /etc/pihole/gravity.db < test/gravity.db.sql
@@ -64,6 +118,8 @@ chmod 0666 /etc/pihole/cli_pw
 chown pihole:pihole /etc/pihole/cli_pw
 sleep 600 < /etc/pihole/cli_pw > /dev/null 2>&1 &
 echo $! > /tmp/cli_pw_holder.pid
+# Without /proc/<pid>/fd, a second name for the stale file shows the same
+ln -f /etc/pihole/cli_pw /etc/cli_pw.stale
 
 # Prepare 01-pihole-tests.conf
 mkdir -p /etc/dnsmasq.d
@@ -94,7 +150,12 @@ export FTLCONF_MISC_CHECK_SHMEM=91
 export FTLCONF_files_pcap=$'\001./test/pcap'
 
 # Start FTL
-if ! su pihole -s /bin/sh -c /home/pihole/pihole-FTL; then
+if ${FREEBSD}; then
+  ftl_start=(su -m pihole -c /home/pihole/pihole-FTL)
+else
+  ftl_start=(su pihole -s /bin/sh -c /home/pihole/pihole-FTL)
+fi
+if ! "${ftl_start[@]}"; then
   echo "pihole-FTL failed to start"
   exit 1
 fi

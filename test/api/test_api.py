@@ -10,7 +10,9 @@ Usage:
 """
 
 import json
+import os
 import re
+import sys
 from urllib.parse import quote
 
 import pytest
@@ -1114,9 +1116,13 @@ class TestInfo:
         assert "uptime" in s
         assert s["memory"]["ram"]["total"] > 0
         # All CPUs present, not only those in FTL's affinity mask
-        with open("/sys/devices/system/cpu/present") as f:
-            ranges = [r.split("-") for r in f.read().strip().split(",")]
-        assert s["cpu"]["nprocs"] == sum(int(r[-1]) - int(r[0]) + 1 for r in ranges)
+        if os.path.exists("/sys/devices/system/cpu/present"):
+            with open("/sys/devices/system/cpu/present") as f:
+                ranges = [r.split("-") for r in f.read().strip().split(",")]
+            assert s["cpu"]["nprocs"] == sum(int(r[-1]) - int(r[0]) + 1 for r in ranges)
+        else:
+            # No sysfs (FreeBSD): hw.ncpu
+            assert s["cpu"]["nprocs"] == os.cpu_count()
         assert "ftl" in s
         assert "%mem" in s["ftl"]
         assert "%cpu" in s["ftl"]
@@ -1158,7 +1164,8 @@ class TestNetwork:
         data = _j(api_session.get(f"{FTL_URL}/api/network/interfaces", timeout=5))
         ifaces = data["interfaces"]
         names = [i["name"] for i in ifaces]
-        assert "lo" in names, json.dumps(names, indent=2)
+        loopback = "lo0" if sys.platform.startswith("freebsd") else "lo"
+        assert loopback in names, json.dumps(names, indent=2)
 
 
 # ---------------------------------------------------------------------------
