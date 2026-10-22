@@ -368,10 +368,35 @@ bool check_capabilities(void)
 
 #else // !__linux__
 
-// Without per-process capabilities root holds all of them. What grants each
-// one to another user, e.g. FTL running as pihole, is a system setting:
+static bool sysctl_flag(const char *name)
+{
+	int value = 0;
+	size_t len = sizeof(value);
+	return sysctlbyname(name, &value, &len, NULL, 0) == 0 && value != 0;
+}
+
+// Without per-process capabilities root holds all of them, unless it is
+// root in a jail. What grants each one to another user, e.g. FTL running as
+// pihole, is a system setting:
 static const char *privilege_source(const unsigned int cap)
 {
+	if(sysctl_flag("security.jail.jailed"))
+	{
+		switch(cap)
+		{
+			case CAP_NET_RAW:
+			case CAP_NET_ADMIN:
+				return "running as root in a jail with allow.raw_sockets";
+			case CAP_IPC_LOCK:
+				return "running as root in a jail with allow.mlock";
+			case CAP_SYS_TIME:
+			case CAP_SYS_NICE:
+				return "nothing in a jail, only outside of one";
+			default:
+				return "running as root";
+		}
+	}
+
 	switch(cap)
 	{
 		case CAP_NET_BIND_SERVICE:
@@ -393,7 +418,25 @@ static const char *privilege_source(const unsigned int cap)
 bool check_capability(const unsigned int cap)
 {
 	if(geteuid() == 0)
-		return true;
+	{
+		if(!sysctl_flag("security.jail.jailed"))
+			return true;
+
+		// What jail(8) leaves root inside a jail
+		switch(cap)
+		{
+			case CAP_SYS_TIME:
+			case CAP_SYS_NICE:
+				return false;
+			case CAP_NET_RAW:
+			case CAP_NET_ADMIN:
+				return sysctl_flag("security.jail.allow_raw_sockets");
+			case CAP_IPC_LOCK:
+				return sysctl_flag("security.jail.mlock_allowed");
+			default:
+				return true;
+		}
+	}
 
 	int value = 0;
 	size_t len = sizeof(value);
