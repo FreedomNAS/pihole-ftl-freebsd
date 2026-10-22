@@ -14,12 +14,21 @@
 #  include <unwind.h>
 #  include <limits.h>    // PATH_MAX
 #  include <dlfcn.h>     // dladdr() - dynamic symbol lookup from .dynsym
+#  include <link.h>      // ElfW() - program headers of the executable
+#  ifndef __FreeBSD__
+#    include <sys/auxv.h> // getauxval() - where they are
+#  endif
 #  include <ucontext.h>  // ucontext_t - register snapshot from SA_SIGINFO handlers
 #  include <fcntl.h>     // open() - raw, signal-safe /proc/self/maps reading
 #  include <poll.h>      // poll() - bound the addr2line subprocess wall-clock
 #  include <sys/wait.h>  // waitpid()/WIFEXITED() - reap the addr2line child
 #endif
 #include <sys/mman.h>    // mmap() - alternate signal stack with a guard page
+#ifdef __FreeBSD__
+#  include <sys/sysctl.h> // sysctl() - process details instead of /proc
+#  include <sys/user.h>   // struct kinfo_proc, struct kinfo_vmentry
+#  include <stdatomic.h>  // atomic_flag - the static memory map buffer
+#endif
 #include "compat/selfexe.h"
 #include "signals.h"
 // logging routines
@@ -65,15 +74,30 @@ static char bin_path[PATH_MAX] = { 0 };
 // PIE load base address - set once at startup by init_backtrace() using the
 // __ehdr_start linker symbol (GNU ld / lld / mold). __ehdr_start points to the
 // ELF header in memory, which equals the ASLR slide for PIE binaries and the
-// static load address for non-PIE. Either way: file_vaddr = runtime_addr -
-// exe_load_addr is exactly what addr2line expects. This is a linker symbol, not
+// static load address for non-PIE (see exe_slide below for what addr2line
+// expects in each case). This is a linker symbol, not
 // a libc function, so it is reliable on glibc AND musl, static AND dynamic -
 // unlike dl_iterate_phdr, whose behaviour for static executables varies across
 // musl versions and may leave exe_load_addr == 0.
 static uintptr_t exe_load_addr = 0;
+// What to subtract from a runtime address in the executable to get the
+// address addr2line expects. The load base for a PIE (linked at 0); zero for
+// a fixed-address executable (e.g. clang's default, no -pie), whose code runs
+// at the addresses it was linked at.
+static uintptr_t exe_slide = 0;
 // Provided by the linker for every ELF executable (GNU ld, lld, mold, gold).
 extern const char __ehdr_start;
 #endif // USE_UNWIND
+
+#if defined(USE_UNWIND) && defined(__FreeBSD__)
+static int get_exe_slide(struct dl_phdr_info *info, size_t size, void *data)
+{
+	(void)size;
+	*(uintptr_t *)data = (uintptr_t)info->dlpi_addr;
+	// Only the first object, the executable
+	return 1;
+}
+#endif
 
 // Initialize the backtrace subsystem.
 // Must be called early in main() (before handle_signals()) so that bin_path
@@ -96,6 +120,29 @@ void init_backtrace(const char *argv0)
 	// __ehdr_start is a linker symbol pointing at the ELF header in memory,
 	// which equals the ASLR load base for PIE binaries.
 	exe_load_addr = (uintptr_t)&__ehdr_start;
+
+#ifdef __FreeBSD__
+	// The first object dl_iterate_phdr() reports is the executable, its
+	// dlpi_addr is the slide
+	exe_slide = exe_load_addr;
+	dl_iterate_phdr(get_exe_slide, &exe_slide);
+#else
+	// The ELF header sits at the start of the segment with file offset 0,
+	// its link-time address is that segment's p_vaddr. The kernel tells
+	// where the program headers are
+	const uintptr_t phdr_addr = getauxval(AT_PHDR);
+	const ElfW(Phdr) *phdr = (const ElfW(Phdr) *)phdr_addr;
+	const size_t phnum = getauxval(AT_PHNUM);
+	exe_slide = exe_load_addr;
+	for(size_t i = 0; phdr != NULL && i < phnum; i++)
+	{
+		if(phdr[i].p_type == PT_LOAD && phdr[i].p_offset == 0)
+		{
+			exe_slide = exe_load_addr - (uintptr_t)phdr[i].p_vaddr;
+			break;
+		}
+	}
+#endif
 #else
 	// Unused, cannot generate backtraces right now on non-gcc targets -
 	// this silences a warning about unused parameters in this case
@@ -209,6 +256,54 @@ static void parse_maps_line(const char *line, struct maps_snapshot *snap)
 	e->executable = (p[2] == 'x');
 }
 
+#ifdef __FreeBSD__
+// The process' memory map from the kernel (what procstat -v shows), standing
+// in for /proc/self/maps. sysctl() is a plain system call, so this stays
+// usable in the crash handler. The buffer is static as malloc() is not; a
+// second thread crashing at the same moment finds it busy and goes without
+static char vmmap_buf[256 * 1024];
+static atomic_flag vmmap_busy = ATOMIC_FLAG_INIT;
+
+// Calls fn for each mapping until it returns true
+static void walk_vmmap(bool (*fn)(const struct kinfo_vmentry *kve, void *arg), void *arg)
+{
+	if(atomic_flag_test_and_set(&vmmap_busy))
+		return;
+
+	int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_VMMAP, getpid() };
+	size_t len = sizeof(vmmap_buf);
+	// A map larger than the buffer still fills it, which is enough here
+	if(sysctl(mib, 4, vmmap_buf, &len, NULL, 0) == 0 || (errno == ENOMEM && len > 0))
+	{
+		for(size_t off = 0; off + sizeof(int) <= len;)
+		{
+			const struct kinfo_vmentry *kve = (const struct kinfo_vmentry *)(vmmap_buf + off);
+			if(kve->kve_structsize <= 0 || off + (size_t)kve->kve_structsize > len)
+				break;
+			if(fn(kve, arg))
+				break;
+			off += (size_t)kve->kve_structsize;
+		}
+	}
+
+	atomic_flag_clear(&vmmap_busy);
+}
+
+static bool add_vmmap_entry(const struct kinfo_vmentry *kve, void *arg)
+{
+	struct maps_snapshot *snap = arg;
+	if(snap->count >= MAPS_MAX_ENTRIES)
+		return true;
+
+	struct map_entry *e = &snap->entries[snap->count++];
+	e->start = (uintptr_t)kve->kve_start;
+	e->end = (uintptr_t)kve->kve_end;
+	e->readable = (kve->kve_protection & KVME_PROT_READ) != 0;
+	e->executable = (kve->kve_protection & KVME_PROT_EXEC) != 0;
+	return false;
+}
+#endif
+
 // Capture all process memory mappings into snap using raw open()/read()/close()
 // so this snapshot path avoids non-async-signal-safe stdio (fopen/fgets) - that
 // would risk a deadlock or secondary crash if the fault happened while libc held
@@ -216,6 +311,10 @@ static void parse_maps_line(const char *line, struct maps_snapshot *snap)
 static void capture_maps_snapshot(struct maps_snapshot *snap)
 {
 	snap->count = 0;
+#ifdef __FreeBSD__
+	walk_vmmap(add_vmmap_entry, snap);
+	return;
+#endif
 
 	const int fd = open("/proc/self/maps", O_RDONLY | O_CLOEXEC);
 	if(fd < 0)
@@ -449,6 +548,30 @@ static bool maps_line_name_for_addr(const char *line, const uintptr_t a,
 	return true;
 }
 
+#ifdef __FreeBSD__
+struct vmmap_lookup {
+	uintptr_t addr;
+	char *buf;
+	size_t buflen;
+};
+
+// The basename of the file mapped at lookup->addr, if any (like
+// maps_line_name_for_addr() above)
+static bool vmmap_name_for_addr(const struct kinfo_vmentry *kve, void *arg)
+{
+	struct vmmap_lookup *lookup = arg;
+	if(lookup->addr < kve->kve_start || lookup->addr >= kve->kve_end)
+		return false;
+	if(kve->kve_path[0] != '\0')
+	{
+		const char *base = strrchr(kve->kve_path, '/');
+		strncpy(lookup->buf, base ? base + 1 : kve->kve_path, lookup->buflen - 1u);
+		lookup->buf[lookup->buflen - 1u] = '\0';
+	}
+	return true;
+}
+#endif
+
 // Look up which /proc/self/maps entry contains addr and copy the basename
 // of the mapped file (e.g. "libc.so.6", "[vdso]") into buf.  buf is left empty
 // when the address is not found or has no path.  Uses raw open()/read() and
@@ -463,6 +586,11 @@ static void find_mapping_name(const void *addr, char *buf, const size_t buflen)
 	// Honor the "left empty" contract for every early-return path below so
 	// callers never observe stale buffer contents.
 	buf[0] = '\0';
+#ifdef __FreeBSD__
+	struct vmmap_lookup lookup = { (uintptr_t)addr, buf, buflen };
+	walk_vmmap(vmmap_name_for_addr, &lookup);
+	return;
+#endif
 
 	const int fd = open("/proc/self/maps", O_RDONLY | O_CLOEXEC);
 	if(fd < 0)
@@ -538,7 +666,7 @@ static void resolve_frame_object(void *addr, struct frame_info *fi)
 		if((uintptr_t)dl.dli_fbase == exe_load_addr && bin_path[0] != '\0')
 		{
 			fi->obj = bin_path;
-			fi->rel = (uintptr_t)addr - exe_load_addr;
+			fi->rel = (uintptr_t)addr - exe_slide;
 		}
 		else
 		{
@@ -550,7 +678,7 @@ static void resolve_frame_object(void *addr, struct frame_info *fi)
 	{
 		fi->have_dl = false;
 		fi->obj = bin_path; // may be "" when the binary path is unknown
-		fi->rel = (uintptr_t)addr - exe_load_addr;
+		fi->rel = (uintptr_t)addr - exe_slide;
 	}
 }
 
@@ -1138,8 +1266,8 @@ static void __attribute__((noreturn)) signal_handler(int sig, siginfo_t *si, voi
 	// subsequent fault in cleanup() kills the process before exit() runs.
 	fflush(stdout);
 
-	// Print content of /dev/shm
-	ls_dir("/dev/shm");
+	// Print the shared memory objects
+	ls_shm();
 
 	log_info("Please also include some lines from above the !!!!!!!!! header.");
 	log_info("Thank you for helping us to improve our FTL engine!");
@@ -1155,7 +1283,12 @@ static void __attribute__((noreturn)) signal_handler(int sig, siginfo_t *si, voi
 		// Terminate fork indicating failure
 		exit(EXIT_FAILURE);
 	}
+#ifdef __FreeBSD__
+	// Thread IDs are not process IDs here, not even for the main thread
+	else if(!pthread_main_np())
+#else
 	else if(gettid() != getpid())
+#endif
 	{
 		// This is a thread. Stop the DNS service right here rather than
 		// through want_terminate: the thread polling that flag may be
@@ -1282,6 +1415,16 @@ void log_sigterm_info(void)
 
 	// Get name of the process that sent the terminating signal
 	char kill_name[256] = { 0 };
+#ifdef __FreeBSD__
+	// The same NUL-separated arguments as /proc/<pid>/cmdline
+	// (one byte short of the buffer, for the terminator added below)
+	int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_ARGS, (int)kill_pid };
+	size_t read = sizeof(kill_name) - 1;
+	if(sysctl(mib, 4, kill_name, &read, NULL, 0) == 0 || (errno == ENOMEM && read > 0))
+	{
+		if(read > 0)
+		{
+#else
 	char kill_exe [256] = { 0 };
 	snprintf(kill_exe, sizeof(kill_exe), "/proc/%ld/cmdline", (long int)kill_pid);
 	FILE *fp = fopen(kill_exe, "r");
@@ -1294,6 +1437,7 @@ void log_sigterm_info(void)
 		// with no terminator at all for the log line to stop at
 		if((read = fread(kill_name, sizeof(char), sizeof(kill_name) - 1, fp)) > 0)
 		{
+#endif
 			kill_name[read] = '\0';
 
 			// cmdline contains null-separated arguments - replace
@@ -1315,7 +1459,9 @@ void log_sigterm_info(void)
 		}
 		else
 			strcpy(kill_name, "N/A");
+#ifndef __FreeBSD__
 		fclose(fp);
+#endif
 	}
 	else
 		strcpy(kill_name, "N/A");
@@ -1569,6 +1715,19 @@ void restart_ftl(const char *reason)
  */
 pid_t debugger(void)
 {
+#ifdef __FreeBSD__
+	// The kernel fills in the tracer's PID only while we are traced, like
+	// TracerPid below
+	struct kinfo_proc kp = { 0 };
+	size_t len = sizeof(kp);
+	int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid() };
+	if(sysctl(mib, 4, &kp, &len, NULL, 0) != 0 || len == 0)
+	{
+		log_debug(DEBUG_ANY, "Failed to get process details: %s", strerror(errno));
+		return 0;
+	}
+	return kp.ki_tracer;
+#endif
 	FILE *status = fopen("/proc/self/status", "r");
 	if(status == NULL)
 	{

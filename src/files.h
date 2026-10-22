@@ -31,6 +31,7 @@ bool file_writeable(const char *filename);
 off_t get_FTL_db_stats(struct stat *st);
 void get_permission_string(char permissions[10], struct stat *st);
 void ls_dir(const char *path);
+void ls_shm(void);
 unsigned int get_path_usage(const char *path, char buffer[64]);
 struct mntent *get_filesystem_details(const char *path);
 bool directory_exists(const char *path);

@@ -41,6 +41,12 @@
 #include <libgen.h>
 // flock(), LOCK_SH
 #include <sys/file.h>
+#ifdef __FreeBSD__
+// sysctlbyname(), struct kinfo_file, shm_open()
+#include <sys/sysctl.h>
+#include <sys/user.h>
+#include <sys/mman.h>
+#endif
 
 // crypto library
 #include <nettle/sha2.h>
@@ -270,6 +276,79 @@ void ls_dir(const char *path)
 
 	// Close directory stream
 	closedir(dirp);
+}
+
+// Lists the POSIX shared memory objects in the format of ls_dir()
+void ls_shm(void)
+{
+#ifdef __linux__
+	ls_dir("/dev/shm");
+#elif defined(__FreeBSD__)
+	// No file system holds them here, the kernel lists them (like
+	// posixshmcontrol ls does)
+	size_t len = 0;
+	if(sysctlbyname("kern.ipc.posix_shm_list", NULL, &len, NULL, 0) != 0)
+	{
+		log_warn("Cannot list shared memory objects: %s", strerror(errno));
+		return;
+	}
+	len = len * 4 / 3;
+	char *buf = malloc(len);
+	if(buf == NULL || sysctlbyname("kern.ipc.posix_shm_list", buf, &len, NULL, 0) != 0)
+	{
+		log_warn("Cannot list shared memory objects: %s", strerror(errno));
+		free(buf);
+		return;
+	}
+
+	log_info("------ Listing shared memory objects ------");
+	log_info("File Mode User:Group      Size  Filename");
+	const struct kinfo_file *kif = NULL;
+	for(const char *bp = buf; bp < buf + len; bp += kif->kf_structsize)
+	{
+		kif = (const struct kinfo_file *)(const void *)bp;
+		if(kif->kf_structsize <= 0)
+			break;
+
+		// Owner and group are only known to fstat()
+		struct stat st = { 0 };
+		const int fd = shm_open(kif->kf_path, O_RDONLY, 0);
+		if(fd < 0 || fstat(fd, &st) != 0)
+		{
+			if(fd >= 0)
+				close(fd);
+			continue;
+		}
+		close(fd);
+
+		char usergroup[256];
+		const struct passwd *pwd = getpwuid(st.st_uid);
+		const struct group *grp = getgrgid(st.st_gid);
+		char user[128], group[128];
+		if(pwd != NULL)
+			snprintf(user, sizeof(user), "%s", pwd->pw_name);
+		else
+			snprintf(user, sizeof(user), "%u", st.st_uid);
+		if(grp != NULL)
+			snprintf(group, sizeof(group), "%s", grp->gr_name);
+		else
+			snprintf(group, sizeof(group), "%u", st.st_gid);
+		snprintf(usergroup, sizeof(usergroup), "%s:%s", user, group);
+
+		st.st_mode = kif->kf_un.kf_file.kf_file_mode;
+		char permissions[10];
+		get_permission_string(permissions, &st);
+
+		char prefix[2] = { 0 };
+		double formatted = 0.0;
+		format_memory_size(prefix, (unsigned long long)kif->kf_un.kf_file.kf_file_size, &formatted);
+
+		log_info("%s %-15s %3.0f%s  %s", permissions, usergroup, formatted,
+		         strlen(prefix) > 0 ? prefix : " ", kif->kf_path);
+	}
+	log_info("---------------------------------------------------");
+	free(buf);
+#endif
 }
 
 unsigned int get_path_usage(const char *path, char buffer[64])

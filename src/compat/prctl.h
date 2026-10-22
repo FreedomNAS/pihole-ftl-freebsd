@@ -13,6 +13,8 @@
 #include <pthread.h>
 #include <stdarg.h>
 #include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
 #ifdef __FreeBSD__
 #include <pthread_np.h>
 #endif
@@ -34,7 +36,12 @@ static inline int prctl(int option, ...)
 		case PR_SET_NAME:
 			return pthread_setname_np(pthread_self(), name) == 0 ? 0 : -1;
 		case PR_GET_NAME:
-			return pthread_getname_np(pthread_self(), name, 16) == 0 ? 0 : -1;
+			if(pthread_getname_np(pthread_self(), name, 16) != 0)
+				return -1;
+			// Linux names a thread after its process until it is renamed
+			if(name[0] == '\0')
+				snprintf(name, 16, "%s", getprogname());
+			return 0;
 		default:
 			errno = EINVAL;
 			return -1;
