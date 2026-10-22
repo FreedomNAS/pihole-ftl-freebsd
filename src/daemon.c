@@ -45,6 +45,11 @@
 #include "procps.h"
 // destroy_entropy()
 #include "webserver/x509.h"
+#ifdef __FreeBSD__
+// sysctlbyname(), getifaddrs()
+#include <sys/sysctl.h>
+#include <ifaddrs.h>
+#endif
 
 pthread_t threads[THREADS_MAX] = { 0 };
 bool resolver_ready = false;
@@ -605,6 +610,25 @@ ssize_t getrandom_fallback(void *buf, size_t buflen, unsigned int flags)
 
 bool ipv6_enabled(void)
 {
+#ifdef __FreeBSD__
+	// IPv6 is off when the kernel is built without it (no "options INET6")
+	int inet6 = 0;
+	size_t len = sizeof(inet6);
+	if(sysctlbyname("kern.features.inet6", &inet6, &len, NULL, 0) != 0 || inet6 == 0)
+		return false;
+
+	// Like /proc/net/if_inet6 below: is there any interface with an IPv6
+	// address (including ::1 and link-local ones)?
+	struct ifaddrs *addrs = NULL;
+	if(getifaddrs(&addrs) != 0)
+		return true;
+	bool found = false;
+	for(const struct ifaddrs *ifa = addrs; ifa != NULL && !found; ifa = ifa->ifa_next)
+		found = ifa->ifa_addr != NULL && ifa->ifa_addr->sa_family == AF_INET6;
+	freeifaddrs(addrs);
+	return found;
+#endif
+
 	// First we check a few virtual system files to see if IPv6 is disabled
 	const char *files[] = {
 		"/sys/module/ipv6/parameters/disable", // GRUB - ipv6.disable=1

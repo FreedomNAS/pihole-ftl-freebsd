@@ -59,6 +59,14 @@
 // timer_elapsed_msec()
 #include "timers.h"
 
+#ifdef __FreeBSD__
+// sysctl(3), kenv(2)
+#include <sys/sysctl.h>
+#include <kenv.h>
+// floor()
+#include <math.h>
+#endif
+
 #define VERSIONS_FILE PIHOLE_CONFDIR "/versions"
 
 int api_info_client(struct ftl_conn *api)
@@ -495,8 +503,247 @@ static int get_hwmon_sensors(struct ftl_conn *api, cJSON *sensors)
 	return 0;
 }
 
+#ifdef __FreeBSD__
+// Temperatures are sysctl(3) leaves of format "IK" (deciKelvin) or "IKn"
+// (n decimal places of Kelvin). Reads one in degrees Celsius
+static bool read_sysctl_temp(const char *name, double *celsius)
+{
+	int oid[CTL_MAXNAME];
+	size_t len = CTL_MAXNAME;
+	if(sysctlnametomib(name, oid, &len) != 0)
+		return false;
+
+	int qoid[CTL_MAXNAME + 2] = { CTL_SYSCTL, CTL_SYSCTL_OIDFMT };
+	memcpy(qoid + 2, oid, len * sizeof(int));
+	char fmt[sizeof(u_int) + 16] = { 0 };
+	size_t fmtlen = sizeof(fmt) - 1;
+	if(sysctl(qoid, (u_int)len + 2, fmt, &fmtlen, NULL, 0) != 0 ||
+	   strncmp(fmt + sizeof(u_int), "IK", 2) != 0)
+		return false;
+
+	int raw = 0;
+	size_t rawlen = sizeof(raw);
+	if(sysctl(oid, (u_int)len, &raw, &rawlen, NULL, 0) != 0 || rawlen != sizeof(raw))
+		return false;
+
+	// Drivers report -1 (or nothing sensible) for missing values
+	if(raw <= 0)
+		return false;
+
+	const char *digits = fmt + sizeof(u_int) + 2;
+	const int prec = *digits >= '0' && *digits <= '9' ? *digits - '0' : 1;
+	double base = 1.0;
+	for(int i = 0; i < prec; i++)
+		base *= 10.0;
+
+	// Drivers count from 0 °C = 273.1 K (2731 dK), so round to the
+	// precision of the format the way sysctl(8) prints it
+	*celsius = floor((raw / base - 273.15) * base + 0.5) / base;
+	return true;
+}
+
+static double convert_temp_unit(const double celsius)
+{
+	if(config.webserver.api.temp.unit.v.temp_unit == TEMP_UNIT_F)
+		return 1.8*celsius + 32;
+	else if(config.webserver.api.temp.unit.v.temp_unit == TEMP_UNIT_K)
+		return celsius + 273.15;
+	return celsius;
+}
+
+// Adds the temperature limit of the sensor below prefix, if a driver offers one
+static void add_sysctl_limit(cJSON *item, const char *key, const char *prefix, const char *const *names)
+{
+	double limit = 0.0;
+	for(; *names != NULL; names++)
+	{
+		char name[256];
+		snprintf(name, sizeof(name), "%s.%s", prefix, *names);
+		if(read_sysctl_temp(name, &limit))
+		{
+			cJSON_AddNumberToObject(item, key, convert_temp_unit(limit));
+			return;
+		}
+	}
+	cJSON_AddNullToObject(item, key);
+}
+
+// The counterpart of the hwmon sensors: coretemp(4) and amdtemp(4) add
+// dev.cpu.N.temperature, acpi_thermal(4) hw.acpi.thermal.tzN.temperature,
+// SoC drivers dev.<driver>.N.<sensor>. Sensors of the same driver are grouped
+// like the temperatures of one hwmon device
+static int get_sysctl_sensors(struct ftl_conn *api, cJSON *sensors)
+{
+	static const char *const crit_names[] = { "coretemp.tjmax", "_CRT", NULL };
+	static const char *const max_names[] = { "_HOT", NULL };
+	static const char *const roots[] = { "dev", "hw" };
+
+	for(unsigned int r = 0; r < ArraySize(roots); r++)
+	{
+		int root[CTL_MAXNAME];
+		size_t rootlen = CTL_MAXNAME;
+		if(sysctlnametomib(roots[r], root, &rootlen) != 0)
+			continue;
+
+		int oid[CTL_MAXNAME];
+		size_t len = rootlen;
+		memcpy(oid, root, rootlen * sizeof(int));
+
+		// Walk the subtree like sysctl -a does
+		while(true)
+		{
+			int qoid[CTL_MAXNAME + 2] = { CTL_SYSCTL, CTL_SYSCTL_NEXT };
+			memcpy(qoid + 2, oid, len * sizeof(int));
+			size_t nextlen = sizeof(oid);
+			if(sysctl(qoid, (u_int)len + 2, oid, &nextlen, NULL, 0) != 0)
+				break;
+			len = nextlen / sizeof(int);
+			if(len < rootlen || memcmp(oid, root, rootlen * sizeof(int)) != 0)
+				break;
+
+			// Only temperatures
+			qoid[1] = CTL_SYSCTL_OIDFMT;
+			memcpy(qoid + 2, oid, len * sizeof(int));
+			char fmt[sizeof(u_int) + 16] = { 0 };
+			size_t fmtlen = sizeof(fmt) - 1;
+			if(sysctl(qoid, (u_int)len + 2, fmt, &fmtlen, NULL, 0) != 0 ||
+			   strncmp(fmt + sizeof(u_int), "IK", 2) != 0)
+				continue;
+
+			qoid[1] = CTL_SYSCTL_NAME;
+			char name[256] = { 0 };
+			size_t namelen = sizeof(name) - 1;
+			if(sysctl(qoid, (u_int)len + 2, name, &namelen, NULL, 0) != 0)
+				continue;
+
+			// Limits (tjmax, ACPI's _CRT, _HOT, _PSV, ...) are not sensors
+			char *leaf = strrchr(name, '.');
+			if(leaf == NULL || leaf[1] == '_' || strcmp(leaf + 1, "tjmax") == 0)
+				continue;
+
+			double celsius = 0.0;
+			if(!read_sysctl_temp(name, &celsius))
+				continue;
+
+			// Group (named like the Linux driver where there is one),
+			// the sysctl node it lives in and the sensor's label:
+			// "dev.cpu.0.temperature" -> cpu, dev.cpu, cpu0
+			// "hw.acpi.thermal.tz0.temperature" -> acpitz, hw.acpi.thermal, tz0
+			// "dev.aw_thermal.0.cpu" -> aw_thermal, dev.aw_thermal, aw_thermal0.cpu
+			char group[256], path[256], label[256];
+			if(strncmp(name, "hw.acpi.thermal.", 16) == 0)
+			{
+				strcpy(group, "acpitz");
+				strcpy(path, "hw.acpi.thermal");
+				snprintf(label, sizeof(label), "%s", name + 16);
+			}
+			else if(strncmp(name, "dev.", 4) == 0 && strchr(name + 4, '.') != NULL)
+			{
+				const char *unit = strchr(name + 4, '.') + 1;
+				snprintf(group, sizeof(group), "%.*s", (int)(unit - name - 5), name + 4);
+				snprintf(path, sizeof(path), "dev.%s", group);
+				snprintf(label, sizeof(label), "%s%s", group, unit);
+			}
+			else
+			{
+				snprintf(group, sizeof(group), "%.*s", (int)(leaf - name), name);
+				strcpy(path, group);
+				snprintf(label, sizeof(label), "%s", leaf + 1);
+			}
+			char *suffix = strstr(label, ".temperature");
+			if(suffix != NULL && suffix[12] == '\0')
+				*suffix = '\0';
+
+			// Find or create the group
+			cJSON *hwmon = NULL, *temps = NULL;
+			cJSON_ArrayForEach(hwmon, sensors)
+			{
+				const char *hwname = cJSON_GetStringValue(cJSON_GetObjectItem(hwmon, "name"));
+				if(hwname != NULL && strcmp(hwname, group) == 0)
+					break;
+			}
+			if(hwmon == NULL)
+			{
+				hwmon = JSON_NEW_OBJECT();
+				JSON_COPY_STR_TO_OBJECT(hwmon, "name", group);
+				JSON_COPY_STR_TO_OBJECT(hwmon, "path", path);
+				JSON_COPY_STR_TO_OBJECT(hwmon, "source", path);
+				temps = JSON_NEW_ARRAY();
+				JSON_ADD_ITEM_TO_OBJECT(hwmon, "temps", temps);
+				JSON_ADD_ITEM_TO_ARRAY(sensors, hwmon);
+			}
+			else
+				temps = cJSON_GetObjectItem(hwmon, "temps");
+
+			cJSON *item = JSON_NEW_OBJECT();
+			JSON_COPY_STR_TO_OBJECT(item, "name", label);
+			JSON_ADD_NUMBER_TO_OBJECT(item, "value", convert_temp_unit(celsius));
+			*leaf = '\0';
+			add_sysctl_limit(item, "max", name, max_names);
+			add_sysctl_limit(item, "crit", name, crit_names);
+			*leaf = '.';
+			JSON_COPY_STR_TO_OBJECT(item, "sensor", name);
+
+			// Keep the sensors in order (cpu0, cpu1, ..., cpu10), the
+			// tree walk does not return them that way
+			int pos = 0;
+			const size_t labellen = strlen(label);
+			for(cJSON *t = temps->child; t != NULL; t = t->next, pos++)
+			{
+				const char *other = cJSON_GetStringValue(cJSON_GetObjectItem(t, "name"));
+				const size_t otherlen = other != NULL ? strlen(other) : 0;
+				if(other != NULL && (otherlen > labellen || (otherlen == labellen && strcmp(other, label) > 0)))
+					break;
+			}
+			cJSON_InsertItemInArray(temps, pos, item);
+		}
+	}
+
+	return 0;
+}
+
+static cJSON *read_kenv_property(const char *name)
+{
+	char buf[KENV_MVALLEN + 1] = { 0 };
+	if(kenv(KENV_GET, name, buf, sizeof(buf) - 1) < 0)
+		return cJSON_CreateNull();
+	return cJSON_CreateString(buf);
+}
+
+static cJSON *read_sysctl_property(const char *name)
+{
+	char buf[256] = { 0 };
+	size_t len = sizeof(buf) - 1;
+	if(sysctlbyname(name, buf, &len, NULL, 0) != 0 || buf[0] == '\0')
+		return cJSON_CreateNull();
+	return cJSON_CreateString(buf);
+}
+#endif
+
 cJSON *read_sys_property(const char *path)
 {
+#ifdef __FreeBSD__
+	// Where FreeBSD keeps what Linux shows under /sys: the SMBIOS strings
+	// the loader puts in the kernel environment and the device tree model
+	static const struct {
+		const char *path, *kenv, *sysctl;
+	} sources[] = {
+		{ "/sys/firmware/devicetree/base/model", NULL, "hw.fdt.model" },
+		{ "/sys/devices/virtual/dmi/id/bios_vendor", "smbios.bios.vendor", NULL },
+		{ "/sys/devices/virtual/dmi/id/board_name", "smbios.planar.product", NULL },
+		{ "/sys/devices/virtual/dmi/id/board_vendor", "smbios.planar.maker", NULL },
+		{ "/sys/devices/virtual/dmi/id/board_version", "smbios.planar.version", NULL },
+		{ "/sys/devices/virtual/dmi/id/product_name", "smbios.system.product", NULL },
+		{ "/sys/devices/virtual/dmi/id/product_family", "smbios.system.family", NULL },
+		{ "/sys/devices/virtual/dmi/id/product_version", "smbios.system.version", NULL },
+		{ "/sys/devices/virtual/dmi/id/sys_vendor", "smbios.system.maker", NULL },
+	};
+	for(unsigned int i = 0; i < ArraySize(sources); i++)
+		if(strcmp(path, sources[i].path) == 0)
+			return sources[i].kenv != NULL ?
+			       read_kenv_property(sources[i].kenv) :
+			       read_sysctl_property(sources[i].sysctl);
+#endif
 	if(!file_exists(path))
 		return cJSON_CreateNull();
 
@@ -712,6 +959,11 @@ int get_sensors_obj(struct ftl_conn *api, cJSON *sensors, const bool add_list)
 	int ret = get_hwmon_sensors(api, list);
 	if (ret != 0)
 		return ret;
+#ifdef __FreeBSD__
+	ret = get_sysctl_sensors(api, list);
+	if (ret != 0)
+		return ret;
+#endif
 	if(add_list)
 		JSON_ADD_ITEM_TO_OBJECT(sensors, "list", list);
 
@@ -733,10 +985,14 @@ int get_sensors_obj(struct ftl_conn *api, cJSON *sensors, const bool add_list)
 		// 2. Intel CPU temperature sensor
 		// 3. General CPU temperature sensor
 		// 4. General SoC temperature sensor (https://discourse.pi-hole.net/t/temperature-value-not-shown/66883)
+		// 5. FreeBSD: AMD CPU temperature sensor, then the per-CPU
+		//    temperatures of coretemp(4)/amdtemp(4)
 		if(strcmp(name->valuestring, "k10temp") == 0 ||
 		   strcmp(name->valuestring, "coretemp") == 0 ||
 		   strcmp(name->valuestring, "cpu_thermal") == 0 ||
-		   strcmp(name->valuestring, "soc_thermal") == 0)
+		   strcmp(name->valuestring, "soc_thermal") == 0 ||
+		   strcmp(name->valuestring, "amdtemp") == 0 ||
+		   strcmp(name->valuestring, "cpu") == 0)
 		{
 			cpu_temp_sensor = i;
 			break;
