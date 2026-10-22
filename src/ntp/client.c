@@ -231,7 +231,14 @@ static bool settime_step(struct timeval *unix_time, const double offset)
 	log_debug(DEBUG_NTP, "Stepping system time by %e s", offset);
 
 	// Set time immediately
+#ifdef __FreeBSD__
+	// clock_settime() is what mac_ntpd(4) lets a non-root user call,
+	// settimeofday() stays reserved to root
+	const struct timespec ts = { .tv_sec = unix_time->tv_sec, .tv_nsec = unix_time->tv_usec * 1000 };
+	if(clock_settime(CLOCK_REALTIME, &ts) != 0)
+#else
 	if(settimeofday(unix_time, NULL) != 0)
+#endif
 	{
 		char errbuf[1024];
 		strncpy(errbuf, "Failed to set time during NTP sync: ", sizeof(errbuf));

@@ -2896,7 +2896,11 @@ mg_set_thread_name(const char *name)
 #endif
 
 	// Pi-hole modification: Increase niceness of threads
+	// (only Linux has a niceness per thread, elsewhere it belongs to the
+	// whole process and a thread ID is no process ID)
+#ifdef __linux__
 	setpriority(PRIO_PROCESS, gettid(), 5);
+#endif
 }
 #else /* !defined(NO_THREAD_NAME) */
 static void

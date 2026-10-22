@@ -16,6 +16,12 @@
 #include "capabilities.h"
 #include "config/config.h"
 #include "log.h"
+#ifndef __linux__
+// sysctlbyname(), getpwnam()
+#include <sys/sysctl.h>
+#include <unistd.h>
+#include <pwd.h>
+#endif
 #ifdef __linux__
 // prctl(), PR_CAP_AMBIENT
 #include <sys/prctl.h>
@@ -362,9 +368,63 @@ bool check_capabilities(void)
 
 #else // !__linux__
 
-// Without per-process capabilities everything FTL asks for comes with root,
-// and nothing can be set aside or handed on: these only report whether FTL
-// runs as root
+// Without per-process capabilities root holds all of them. What grants each
+// one to another user, e.g. FTL running as pihole, is a system setting:
+static const char *privilege_source(const unsigned int cap)
+{
+	switch(cap)
+	{
+		case CAP_NET_BIND_SERVICE:
+			return "net.inet.ip.portrange.reservedhigh=0, optionally narrowed per user by mac_portacl(4)";
+		case CAP_NET_RAW:
+		case CAP_NET_ADMIN:
+			// Raw IP sockets, e.g. the DHCP server's ping before it
+			// offers an address, need root here
+			return "running as root, raw sockets need it";
+		case CAP_SYS_TIME:
+			return "mac_ntpd(4) with security.mac.ntpd.uid set to FTL's user";
+		case CAP_IPC_LOCK:
+			return "security.bsd.unprivileged_mlock=1";
+		default:
+			return "running as root";
+	}
+}
+
+bool check_capability(const unsigned int cap)
+{
+	if(geteuid() == 0)
+		return true;
+
+	int value = 0;
+	size_t len = sizeof(value);
+	switch(cap)
+	{
+		case CAP_NET_BIND_SERVICE:
+		{
+			// Ports reservedlow..reservedhigh need root
+			int low = 0;
+			size_t lowlen = sizeof(low);
+			if(sysctlbyname("net.inet.ip.portrange.reservedhigh", &value, &len, NULL, 0) != 0 ||
+			   sysctlbyname("net.inet.ip.portrange.reservedlow", &low, &lowlen, NULL, 0) != 0)
+				return false;
+			return value == 0 || value < low;
+		}
+		case CAP_SYS_TIME:
+			if(sysctlbyname("security.mac.ntpd.enabled", &value, &len, NULL, 0) != 0 || value == 0)
+				return false;
+			len = sizeof(value);
+			return sysctlbyname("security.mac.ntpd.uid", &value, &len, NULL, 0) == 0 &&
+			       (uid_t)value == geteuid();
+		case CAP_IPC_LOCK:
+			return sysctlbyname("security.bsd.unprivileged_mlock", &value, &len, NULL, 0) == 0 &&
+			       value != 0;
+		default:
+			return false;
+	}
+}
+
+// Nothing can be set aside and taken up again: a privilege is there for the
+// whole process or not at all
 bool suspend_capability(const unsigned int cap)
 {
 	(void)cap;
@@ -373,57 +433,50 @@ bool suspend_capability(const unsigned int cap)
 
 bool restore_capability_for_exec(const unsigned int cap)
 {
-	(void)cap;
-	return geteuid() == 0;
+	return check_capability(cap);
 }
 
 bool use_capability(const unsigned int cap, const bool enable)
 {
-	(void)cap;
-	(void)enable;
-	return geteuid() == 0;
+	return !enable || check_capability(cap);
 }
 
-bool check_capability(const unsigned int cap)
+// Warn when a privilege this configuration needs is missing, like
+// warn_missing_cap() on Linux
+static bool warn_missing_privilege(const unsigned int cap, const char *name,
+                                   const bool needed, const char *what)
 {
-	(void)cap;
-	return geteuid() == 0;
+	if(!needed || check_capability(cap))
+		return true;
+
+	log_warn("%s is not available, needed for %s (on FreeBSD: %s)",
+	         name, what, privilege_source(cap));
+	return false;
 }
 
 bool check_capabilities(void)
 {
-	if(geteuid() == 0)
-		return true;
-
 	bool capabilities_okay = true;
-	if(config.dhcp.active.v.b)
-	{
-		log_warn("Not running as root, needed for ARP injection while acting as the DHCP server");
-		capabilities_okay = false;
-	}
-	if(binds_privileged_port())
-	{
-		log_warn("Not running as root, needed for binding a privileged port");
-		capabilities_okay = false;
-	}
-	if(config.misc.nice.v.i < 0)
-	{
-		log_warn("Not running as root, needed for raising the process priority set in misc.nice");
-		capabilities_okay = false;
-	}
-	if(config.ntp.sync.active.v.b)
-	{
-		log_warn("Not running as root, needed for setting the system time from the NTP client");
-		capabilities_okay = false;
-	}
+	capabilities_okay &= warn_missing_privilege(CAP_NET_ADMIN, "CAP_NET_ADMIN",
+	                                            config.dhcp.active.v.b,
+	                                            "ARP injection while acting as the DHCP server");
+	capabilities_okay &= warn_missing_privilege(CAP_NET_BIND_SERVICE, "CAP_NET_BIND_SERVICE",
+	                                            binds_privileged_port(),
+	                                            "binding a privileged port");
+	capabilities_okay &= warn_missing_privilege(CAP_SYS_NICE, "CAP_SYS_NICE",
+	                                            config.misc.nice.v.i < 0,
+	                                            "raising the process priority set in misc.nice");
+	capabilities_okay &= warn_missing_privilege(CAP_SYS_TIME, "CAP_SYS_TIME",
+	                                            config.ntp.sync.active.v.b,
+	                                            "setting the system time from the NTP client");
+
 	// Files FTL creates belong to the user it runs as. Only another user
 	// than pihole would need root to hand them over
 	const struct passwd *pw = getpwnam("pihole");
-	if(pw == NULL || pw->pw_uid != geteuid())
-	{
-		log_warn("Not running as root, needed for taking ownership of the files FTL creates");
-		capabilities_okay = false;
-	}
+	capabilities_okay &= warn_missing_privilege(CAP_CHOWN, "CAP_CHOWN",
+	                                            pw == NULL || pw->pw_uid != geteuid(),
+	                                            "taking ownership of the files FTL creates");
+
 	return capabilities_okay;
 }
 

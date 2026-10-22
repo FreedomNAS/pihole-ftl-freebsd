@@ -14,8 +14,8 @@
 #ifdef __linux__
 #include <linux/capability.h>
 #else
-// No per-process capabilities: the numbers only name what FTL asks for, and
-// holding one means running as root
+// No per-process capabilities: the numbers only name what FTL asks for,
+// capabilities.c maps each to the system setting that grants it
 #define CAP_CHOWN            0
 #define CAP_NET_BIND_SERVICE 10
 #define CAP_NET_ADMIN        12
