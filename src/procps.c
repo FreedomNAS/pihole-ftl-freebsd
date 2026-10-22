@@ -21,6 +21,12 @@
 #include "config/config.h"
 // readPID()
 #include "daemon.h"
+#ifndef __linux__
+#include <sys/sysctl.h>
+#include <sys/user.h>
+#include <sys/resource.h>
+#include <sys/time.h>
+#endif
 
 #define PROCESS_NAME   "pihole-FTL"
 
@@ -33,6 +39,7 @@
 // it is better than nothing.
 bool get_process_name(const pid_t pid, char name[PROC_PATH_SIZ])
 {
+#ifdef __linux__
 	if(pid == 0)
 	{
 		strcpy(name, "init");
@@ -82,6 +89,29 @@ bool get_process_name(const pid_t pid, char name[PROC_PATH_SIZ])
 	fclose(f);
 
 	return true;
+#else
+	if(pid == 0)
+	{
+		strcpy(name, "init");
+		return true;
+	}
+	char exe[PATH_MAX] = { 0 };
+	size_t len = sizeof(exe);
+	int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, pid };
+	if(sysctl(mib, 4, exe, &len, NULL, 0) == 0 && exe[0] != '\0')
+	{
+		const char *ptr = strrchr(exe, '/');
+		snprintf(name, PROC_PATH_SIZ, "%s", ptr != NULL ? ptr + 1 : exe);
+		return true;
+	}
+	struct kinfo_proc kp;
+	len = sizeof(kp);
+	int pmib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, pid };
+	if(sysctl(pmib, 4, &kp, &len, NULL, 0) != 0 || len == 0)
+		return false;
+	snprintf(name, PROC_PATH_SIZ, "%s", kp.ki_comm);
+	return true;
+#endif
 }
 
 /**
@@ -128,6 +158,7 @@ static pid_t readPID(void)
  */
 static bool process_alive(const pid_t pid)
 {
+#ifdef __linux__
 	// Create /proc/<pid>/status filename
 	char filename[64] = { 0 };
 	snprintf(filename, sizeof(filename), "/proc/%d/status", pid);
@@ -167,6 +198,14 @@ static bool process_alive(const pid_t pid)
 
 	// Process is still alive if the running flag is still true
 	return running;
+#else
+	struct kinfo_proc kp;
+	size_t len = sizeof(kp);
+	int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, pid };
+	if(sysctl(mib, 4, &kp, &len, NULL, 0) != 0 || len == 0)
+		return false;
+	return kp.ki_stat != SZOMB;
+#endif
 }
 
 // This function prints an info message about if another FTL process is already
@@ -218,6 +257,7 @@ bool another_FTL(void)
 
 bool getProcessMemory(struct proc_mem *mem, const unsigned long total_memory)
 {
+#ifdef __linux__
 	// Open /proc/self/status
 	FILE *file = fopen("/proc/self/status", "r");
 	if(file == NULL)
@@ -239,12 +279,33 @@ bool getProcessMemory(struct proc_mem *mem, const unsigned long total_memory)
 		mem->VmRSS_percent = 99.9f;
 
 	return true;
+#else
+	struct kinfo_proc kp;
+	size_t len = sizeof(kp);
+	int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid() };
+	if(sysctl(mib, 4, &kp, &len, NULL, 0) != 0 || len == 0)
+		return false;
+	const unsigned long page_kb = (unsigned long)getpagesize() / 1024;
+	mem->VmRSS = (unsigned long)kp.ki_rssize * page_kb;
+	mem->VmSize = (unsigned long)(kp.ki_size / 1024);
+	// The kernel keeps no peak virtual size; the peak resident size is
+	// the rusage maximum
+	mem->VmHWM = (unsigned long)kp.ki_rusage.ru_maxrss;
+	mem->VmPeak = mem->VmSize;
+
+	mem->VmRSS_percent = 100.0f * mem->VmRSS / total_memory;
+	if(mem->VmRSS_percent > 99.9f)
+		mem->VmRSS_percent = 99.9f;
+
+	return true;
+#endif
 }
 
 // Get RAM information in units of kB
 // This is implemented similar to how free (procps) does it
 bool parse_proc_meminfo(struct proc_meminfo *mem)
 {
+#ifdef __linux__
 	long page_cached = -1, buffers = -1, slab_reclaimable = -1;
 	FILE *meminfo = fopen("/proc/meminfo", "r");
 	if(meminfo == NULL)
@@ -278,6 +339,29 @@ bool parse_proc_meminfo(struct proc_meminfo *mem)
 
 	// Return success
 	return true;
+#else
+	// Pages: free can be used at once, inactive and laundry are cached
+	// contents the kernel gives back when needed, like Linux's
+	// MemAvailable counts its page cache
+	unsigned int count = 0, mfree = 0, inactive = 0, laundry = 0;
+	size_t len = sizeof(unsigned int);
+	if(sysctlbyname("vm.stats.vm.v_page_count", &count, &len, NULL, 0) != 0)
+		return false;
+	len = sizeof(unsigned int);
+	sysctlbyname("vm.stats.vm.v_free_count", &mfree, &len, NULL, 0);
+	len = sizeof(unsigned int);
+	sysctlbyname("vm.stats.vm.v_inactive_count", &inactive, &len, NULL, 0);
+	len = sizeof(unsigned int);
+	sysctlbyname("vm.stats.vm.v_laundry_count", &laundry, &len, NULL, 0);
+
+	const unsigned long page_kb = (unsigned long)getpagesize() / 1024;
+	mem->total = count * page_kb;
+	mem->mfree = mfree * page_kb;
+	mem->cached = (unsigned long)(inactive + laundry) * page_kb;
+	mem->avail = mem->mfree + mem->cached;
+	mem->used = mem->total - mem->avail;
+	return true;
+#endif
 }
 
 
@@ -289,6 +373,7 @@ bool parse_proc_meminfo(struct proc_meminfo *mem)
  */
 double parse_proc_stat(void)
 {
+#ifdef __linux__
 	FILE *statfile = fopen("/proc/stat", "r");
 	if(statfile == NULL)
 		return -1.0;
@@ -356,6 +441,18 @@ double parse_proc_stat(void)
 
 	const long ticks = sysconf(_SC_CLK_TCK);
 	return (user + nice + system) / (double)ticks;
+#else
+	// kern.cp_time: user, nice, system, interrupt, idle in stathz ticks
+	long cp_time[CPUSTATES];
+	size_t len = sizeof(cp_time);
+	if(sysctlbyname("kern.cp_time", cp_time, &len, NULL, 0) != 0)
+		return -1.0;
+	struct clockinfo ci;
+	len = sizeof(ci);
+	if(sysctlbyname("kern.clockrate", &ci, &len, NULL, 0) != 0 || ci.stathz <= 0)
+		return -1.0;
+	return (cp_time[CP_USER] + cp_time[CP_NICE] + cp_time[CP_SYS]) / (double)ci.stathz;
+#endif
 }
 
 /**
@@ -373,6 +470,7 @@ double parse_proc_stat(void)
  */
 double parse_proc_self_stat(void)
 {
+#ifdef __linux__
 	// Open /proc/self/stat
 	FILE *file = fopen("/proc/self/stat", "r");
 	if(file == NULL)
@@ -393,6 +491,13 @@ double parse_proc_self_stat(void)
 		return -1.0;
 
 	return (utime + stime) / (double)ticks;
+#else
+	struct rusage ru;
+	if(getrusage(RUSAGE_SELF, &ru) != 0)
+		return -1.0;
+	return ru.ru_utime.tv_sec + ru.ru_utime.tv_usec / 1e6 +
+	       ru.ru_stime.tv_sec + ru.ru_stime.tv_usec / 1e6;
+#endif
 }
 
 /**
@@ -413,6 +518,7 @@ double parse_proc_self_stat(void)
  */
 pid_t search_proc(const char *name)
 {
+#ifdef __linux__
 	DIR *dir = opendir("/proc");
 	if(dir == NULL)
 		return -1;
@@ -450,4 +556,29 @@ pid_t search_proc(const char *name)
 	// No process found with the given name
 	closedir(dir);
 	return -1;
+#else
+	size_t len = 0;
+	int mib[3] = { CTL_KERN, KERN_PROC, KERN_PROC_PROC };
+	if(sysctl(mib, 3, NULL, &len, NULL, 0) != 0)
+		return -1;
+	// Room for processes started meanwhile
+	len += len / 8;
+	struct kinfo_proc *kp = malloc(len);
+	if(kp == NULL)
+		return -1;
+	if(sysctl(mib, 3, kp, &len, NULL, 0) != 0)
+	{
+		free(kp);
+		return -1;
+	}
+	pid_t pid = -1;
+	for(size_t i = 0; i < len / sizeof(*kp); i++)
+		if(strncmp(kp[i].ki_comm, name, PROC_PATH_SIZ) == 0)
+		{
+			pid = kp[i].ki_pid;
+			break;
+		}
+	free(kp);
+	return pid;
+#endif
 }

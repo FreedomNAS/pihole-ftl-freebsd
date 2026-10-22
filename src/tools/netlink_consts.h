@@ -10,6 +10,7 @@
 
 #include "netlink.h"
 
+#ifdef __linux__
 static struct flag_names iflatypes[] =
 {
 #if defined(__linux__) || defined(ARPHRD_NETROM)
@@ -213,6 +214,28 @@ static struct flag_names iflatypes[] =
 	{ ARPHRD_NONE, "none" },
 #endif
 };
+#else
+// FreeBSD reports its own interface types (IFT_*) in ifi_type
+#include <net/if_types.h>
+static struct flag_names iflatypes[] =
+{
+	{ IFT_ETHER, "ether" },
+	{ IFT_LOOP, "loopback" },
+	{ IFT_BRIDGE, "bridge" },
+	{ IFT_L2VLAN, "vlan" },
+	{ IFT_IEEE8023ADLAG, "lagg" },
+	{ IFT_IEEE80211, "ieee80211" },
+	{ IFT_INFINIBAND, "infiniband" },
+	{ IFT_TUNNEL, "tunnel" },
+	{ IFT_GIF, "gif" },
+	{ IFT_STF, "stf" },
+	{ IFT_PPP, "ppp" },
+	{ IFT_PROPVIRTUAL, "virtual" },
+	{ IFT_PFLOG, "pflog" },
+	{ IFT_PFSYNC, "pfsync" },
+	{ IFT_ENC, "enc" },
+};
+#endif
 
 static struct flag_names ifaf_flags[] = {
 	{ IFA_F_SECONDARY, "secondary" },

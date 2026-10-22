@@ -107,7 +107,12 @@ static bool nlrequest(int fd, struct sockaddr_nl *sa, int nlmsg_type)
 		nl->nlmsg_len = NLMSG_LENGTH(sizeof(struct ifaddrmsg));
 
 		struct ifaddrmsg *ifa = (struct ifaddrmsg*)NLMSG_DATA(nl);
+#ifdef __linux__
 		ifa->ifa_family = AF_LOCAL;
+#else
+		// Elsewhere the family is a filter: AF_UNSPEC asks for all
+		ifa->ifa_family = AF_UNSPEC;
+#endif
 	}
 	else if(nlmsg_type == RTM_GETROUTE)
 	{
@@ -115,7 +120,11 @@ static bool nlrequest(int fd, struct sockaddr_nl *sa, int nlmsg_type)
 		nl->nlmsg_len = NLMSG_LENGTH(sizeof(struct rtmsg));
 
 		struct rtmsg *rt = (struct rtmsg*)NLMSG_DATA(nl);
+#ifdef __linux__
 		rt->rtm_family = AF_LOCAL;
+#else
+		rt->rtm_family = AF_UNSPEC;
+#endif
 	}
 	else if(nlmsg_type == RTM_GETLINK)
 	{
@@ -455,9 +464,13 @@ static int nlparsemsg_route(struct rtmsg *rt, void *buf, size_t len, cJSON *rout
 		}
 	}
 
-	// The default route is the one which does not have a "dst" attribute
-	if(cJSON_GetObjectItem(route, "dst") == NULL)
+	// The default route is the one with a zero-length destination prefix.
+	// Linux leaves "dst" out for it, FreeBSD sends the all-zero address
+	if(cJSON_GetObjectItem(route, "dst") == NULL || rt->rtm_dst_len == 0)
+	{
+		cJSON_DeleteItemFromObject(route, "dst");
 		cJSON_AddStringToObject(route, "dst", "default");
+	}
 
 	// Debug output
 	if(config.debug.netlink.v.b)
