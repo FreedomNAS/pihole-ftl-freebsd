@@ -344,7 +344,7 @@ bool check_capabilities(void)
 	                                      binds_privileged_port(),
 	                                      "binding a privileged port");
 	capabilities_okay &= warn_missing_cap(data, CAP_SYS_NICE, "CAP_SYS_NICE",
-	                                      config.misc.nice.v.i < 0,
+	                                      config.misc.nice.v.i < 0 && config.misc.nice.v.i != -999,
 	                                      "raising the process priority set in misc.nice");
 	capabilities_okay &= warn_missing_cap(data, CAP_SYS_TIME, "CAP_SYS_TIME",
 	                                      config.ntp.sync.active.v.b,
@@ -464,7 +464,7 @@ bool check_capabilities(void)
 	                                            binds_privileged_port(),
 	                                            "binding a privileged port");
 	capabilities_okay &= warn_missing_privilege(CAP_SYS_NICE, "CAP_SYS_NICE",
-	                                            config.misc.nice.v.i < 0,
+	                                            config.misc.nice.v.i < 0 && config.misc.nice.v.i != -999,
 	                                            "raising the process priority set in misc.nice");
 	capabilities_okay &= warn_missing_privilege(CAP_SYS_TIME, "CAP_SYS_TIME",
 	                                            config.ntp.sync.active.v.b,
