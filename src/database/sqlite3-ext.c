@@ -76,8 +76,14 @@ static void subnet_match_impl(sqlite3_context *context, int argc, sqlite3_value 
 	// sscanf() will not overwrite the pre-defined CIDR in cidr if
 	// no CIDR is specified in the database
 	int cidr = isIPv6_DB ? 128 : 32;
-	char *addrDB = NULL;
-	const int rt = sscanf(addrDBcidr, "%m[^/]/%i", &addrDB, &cidr);
+	// Split "address[/cidr]" by hand: sscanf()'s %m (allocate) is not
+	// available everywhere (FreeBSD), and without it nothing would match
+	const char *slash = strchr(addrDBcidr, '/');
+	const size_t addrlen = slash != NULL ? (size_t)(slash - addrDBcidr) : strlen(addrDBcidr);
+	char *addrDB = addrlen > 0 ? strndup(addrDBcidr, addrlen) : NULL;
+	int rt = addrDB != NULL ? 1 : 0;
+	if(rt == 1 && slash != NULL && sscanf(slash + 1, "%i", &cidr) == 1)
+		rt = 2;
 
 	// Limit CIDR to valid values
 	if(cidr < 0 || cidr > (isIPv6_DB ? 128 : 32))
