@@ -7,19 +7,6 @@
 *
 *  This file is copyright under the latest version of the EUPL.
 *  Please see LICENSE file for your rights under this license. */
-#ifndef __linux__
-#include "FTL.h"
-#include "dhcp-discover.h"
-#include <stdio.h>
-#include <stdlib.h>
-
-int run_dhcp_discover(void)
-{
-	puts("dhcp-discover is not supported on this platform yet");
-	return EXIT_FAILURE;
-}
-#else
-
 
 #define FTLDNS
 #include "dnsmasq/dnsmasq.h"
@@ -47,6 +34,13 @@ int run_dhcp_discover(void)
 #include <netinet/in.h>
 #include <net/if.h>
 #include <arpa/inet.h>
+#ifndef __linux__
+#include <netinet/in_systm.h>
+#include <netinet/ip.h>
+#include <netinet/udp.h>
+// rawframe_*()
+#include "compat/rawframe.h"
+#endif
 
 // strncpy()
 #include <string.h>
@@ -94,6 +88,37 @@ extern const struct opttab_t {
 // creates a socket for DHCP communication
 static int create_dhcp_socket(const char *iname)
 {
+#ifndef __linux__
+	// There is no SO_BINDTODEVICE here, so we speak DHCP in raw frames on
+	// the interface itself, which also leaves port 68 to a running DHCP
+	// client. Only IPv4/UDP to port 68 that is not a fragment
+	static struct bpf_insn dhcp_client[] = {
+		BPF_STMT(BPF_LD + BPF_H + BPF_ABS, 12),
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, ETH_P_IP, 0, 8),
+		BPF_STMT(BPF_LD + BPF_B + BPF_ABS, 23),
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, IPPROTO_UDP, 0, 6),
+		BPF_STMT(BPF_LD + BPF_H + BPF_ABS, 20),
+		BPF_JUMP(BPF_JMP + BPF_JSET + BPF_K, 0x1fff, 4, 0),
+		BPF_STMT(BPF_LDX + BPF_B + BPF_MSH, 14),
+		BPF_STMT(BPF_LD + BPF_H + BPF_IND, 16),
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, DHCP_CLIENT_PORT, 0, 1),
+		BPF_STMT(BPF_RET + BPF_K, (u_int)-1),
+		BPF_STMT(BPF_RET + BPF_K, 0),
+	};
+	static const struct bpf_program filter = { sizeof(dhcp_client) / sizeof(dhcp_client[0]), dhcp_client };
+
+	const int sock = rawframe_open(iname, &filter);
+	if(sock < 0)
+	{
+		start_lock();
+		printf("Error: Could not open bpf(4) on interface %s (%s)\n",
+		              iname, strerror(errno));
+		end_lock();
+		return -1;
+	}
+
+	return sock;
+#else
 	struct sockaddr_in dhcp_socket;
 	struct ifreq interface;
 	int flag = 1;
@@ -164,11 +189,20 @@ static int create_dhcp_socket(const char *iname)
 	}
 
 	return sock;
+#endif
 }
 
 // determines hardware address on client machine
 int get_hardware_address(const int sock, const char *iname, unsigned char *mac)
 {
+#ifndef __linux__
+	(void)sock;
+	if(!rawframe_hwaddr(iname, mac))
+	{
+		printf(" Error: Could not get hardware address of interface %s\n", iname);
+		return false;
+	}
+#else
 	struct ifreq ifr;
 	strncpy((char *)&ifr.ifr_name, iname, sizeof(ifr.ifr_name)-1);
 
@@ -180,6 +214,7 @@ int get_hardware_address(const int sock, const char *iname, unsigned char *mac)
 		return false;
 	}
 	memcpy(&mac[0], &ifr.ifr_hwaddr.sa_data, 6);
+#endif
 #ifdef DEBUG
 	start_lock();
 	printf("Hardware address of this interface: ");
@@ -209,6 +244,93 @@ struct dhcp_packet_data
 	char file [MAX_DHCP_FILE_LENGTH];               // boot file name (used for diskless booting?)
 	unsigned char options[MAX_DHCP_OPTIONS_LENGTH]; // options
 };
+
+#ifndef __linux__
+// DHCP message in the frame we send and receive through bpf(4)
+struct dhcp_frame
+{
+	struct ethhdr eth;
+	struct ip ip;
+	struct udphdr udp;
+	struct dhcp_packet_data dhcp;
+} __attribute__((packed));
+
+static uint16_t ip_checksum(const void *data, size_t len)
+{
+	const uint8_t *p = data;
+	uint32_t sum = 0;
+	for(; len > 1; p += 2, len -= 2)
+		sum += (uint32_t)(p[0] << 8 | p[1]);
+	if(len == 1)
+		sum += (uint32_t)(p[0] << 8);
+	while(sum >> 16)
+		sum = (sum & 0xffff) + (sum >> 16);
+	return htons((uint16_t)~sum);
+}
+
+// What sendto() to 255.255.255.255:67 from 0.0.0.0:68 puts on the wire
+static ssize_t send_dhcp_frame(const int sock, const struct dhcp_packet_data *packet, const unsigned char *mac)
+{
+	struct dhcp_frame frame = { 0 };
+
+	memset(frame.eth.h_dest, 0xff, ETH_ALEN);
+	memcpy(frame.eth.h_source, mac, ETH_ALEN);
+	frame.eth.h_proto = htons(ETH_P_IP);
+
+	frame.ip.ip_v = 4;
+	frame.ip.ip_hl = sizeof(frame.ip) / 4;
+	frame.ip.ip_len = htons(sizeof(frame.ip) + sizeof(frame.udp) + sizeof(frame.dhcp));
+	frame.ip.ip_ttl = 64;
+	frame.ip.ip_p = IPPROTO_UDP;
+	frame.ip.ip_src.s_addr = INADDR_ANY;
+	frame.ip.ip_dst.s_addr = INADDR_BROADCAST;
+	frame.ip.ip_sum = ip_checksum(&frame.ip, sizeof(frame.ip));
+
+	// A zero UDP checksum means "none" over IPv4
+	frame.udp.uh_sport = htons(DHCP_CLIENT_PORT);
+	frame.udp.uh_dport = htons(DHCP_SERVER_PORT);
+	frame.udp.uh_ulen = htons(sizeof(frame.udp) + sizeof(frame.dhcp));
+
+	memcpy(&frame.dhcp, packet, sizeof(frame.dhcp));
+
+	const ssize_t sent = rawframe_send(sock, &frame, sizeof(frame));
+	return sent < 0 ? sent : sent - (ssize_t)offsetof(struct dhcp_frame, dhcp);
+}
+
+// The UDP payload of the next DHCP frame and the address it came from, like
+// recvfrom() on a socket bound to port 68. 0 if none arrived in timeout_ms
+static ssize_t recv_dhcp_frame(const int sock, void *buffer, const size_t buffer_size,
+                               struct sockaddr_in *address, const int timeout_ms)
+{
+	unsigned char frame[ETH_HLEN + 60 + sizeof(struct udphdr) + sizeof(struct dhcp_packet_data)];
+	const ssize_t len = rawframe_recv(sock, frame, sizeof(frame), timeout_ms);
+	if(len <= 0)
+		return len;
+
+	// The filter only passes unfragmented IPv4/UDP to port 68
+	const size_t caplen = (size_t)len < sizeof(frame) ? (size_t)len : sizeof(frame);
+	const struct ip *ip = (const struct ip *)(frame + ETH_HLEN);
+	const size_t iphlen = 4u * ip->ip_hl;
+	const size_t udpoff = ETH_HLEN + iphlen;
+	if(iphlen < sizeof(*ip) || udpoff + sizeof(struct udphdr) > caplen)
+		return 0;
+
+	const struct udphdr *udp = (const struct udphdr *)(frame + udpoff);
+	size_t payload = ntohs(udp->uh_ulen);
+	if(payload < sizeof(*udp))
+		return 0;
+	payload -= sizeof(*udp);
+	if(udpoff + sizeof(*udp) + payload > caplen)
+		payload = caplen - udpoff - sizeof(*udp);
+
+	memcpy(buffer, frame + udpoff + sizeof(*udp), payload < buffer_size ? payload : buffer_size);
+	address->sin_family = AF_INET;
+	address->sin_port = udp->uh_sport;
+	address->sin_addr = ip->ip_src;
+
+	return (ssize_t)payload;
+}
+#endif
 
 // sends a DHCPDISCOVER message to the specified in an attempt to find DHCP servers
 static bool send_dhcp_discover(const int sock, const uint32_t xid, const char *iface, const unsigned char *mac)
@@ -266,7 +388,11 @@ static bool send_dhcp_discover(const int sock, const uint32_t xid, const char *i
 	end_lock();
 #endif
 	// send the DHCPDISCOVER packet
+#ifdef __linux__
 	const ssize_t bytes = sendto(sock, (char *)&discover_packet, sizeof(discover_packet), 0, (struct sockaddr *)&target, sizeof(target));
+#else
+	const ssize_t bytes = send_dhcp_frame(sock, &discover_packet, mac);
+#endif
 	if(bytes < 0)
 	{
 		// strerror() returns "Required key not available" for ENOKEY
@@ -562,9 +688,10 @@ static void print_dhcp_offer(struct in_addr source, struct dhcp_packet_data *off
 // receives a DHCP packet
 static bool receive_dhcp_packet(void *buffer, int buffer_size, const char *iface, int sock, const time_t start_time, struct sockaddr_in *address)
 {
+	int recv_result;
+#ifdef __linux__
 	struct timeval tv;
 	fd_set readfds;
-	int recv_result;
 	socklen_t address_size;
 
 	// Wait for data to arrive
@@ -581,6 +708,12 @@ static bool receive_dhcp_packet(void *buffer, int buffer_size, const char *iface
 
 	address_size = sizeof(struct sockaddr_in);
 	recv_result = recvfrom(sock, (char *)buffer, buffer_size, 0, (struct sockaddr *)address, &address_size);
+#else
+	// Wait up to 100 ms for data to arrive
+	recv_result = recv_dhcp_frame(sock, buffer, buffer_size, address, 100);
+	if(recv_result == 0)
+		return false;
+#endif
 
 	start_lock();
 	printf("* Received %d bytes from %s @ %s\n", recv_result, IP4STR(address->sin_addr), iface);
@@ -752,7 +885,11 @@ static void *dhcp_discover_iface_v4(void *args)
 end_dhcp_discover_iface_v4:
 	// Close socket if we created one
 	if(dhcp_socket > 0)
+#ifdef __linux__
 		close(dhcp_socket);
+#else
+		rawframe_close(dhcp_socket);
+#endif
 
 	// Return the number of responses
 	pthread_exit(tdata);
@@ -961,4 +1098,3 @@ int run_dhcp_discover(void)
 
 	return EXIT_SUCCESS;
 }
-#endif // __linux__

@@ -7,21 +7,6 @@
 *
 *  This file is copyright under the latest version of the EUPL.
 *  Please see LICENSE file for your rights under this license. */
-#ifndef __linux__
-#include "FTL.h"
-#include "arp-scan.h"
-#include <stdio.h>
-#include <stdlib.h>
-
-int run_arp_scan(const bool scan_all, const bool extreme_mode)
-{
-	(void)scan_all;
-	(void)extreme_mode;
-	puts("arp-scan is not supported on this platform yet");
-	return EXIT_FAILURE;
-}
-#else
-
 // Inspired by https://stackoverflow.com/a/39287433 but heavily modified
 
 #include "FTL.h"
@@ -33,11 +18,18 @@ int run_arp_scan(const bool scan_all, const bool extreme_mode)
 #include "timers.h"
 // check_capability()
 #include "capabilities.h"
+#ifdef __linux__
 #include <linux/capability.h>
 
 #include <linux/if_packet.h>
 #include <linux/if_ether.h>
 #include <linux/if_arp.h>
+#else
+#include <ifaddrs.h>
+#include <net/if.h>
+// rawframe_*()
+#include "compat/rawframe.h"
+#endif
 //htons etc
 #include <arpa/inet.h>
 // poll()
@@ -146,6 +138,7 @@ static int send_arps(const int fd, const int ifindex, struct thread_data *thread
 	unsigned char buffer[BUF_SIZE];
 	memset(buffer, 0, sizeof(buffer));
 
+#ifdef __linux__
 	// Construct the Ethernet header
 	struct sockaddr_ll socket_address;
 	socket_address.sll_family = AF_PACKET;
@@ -156,6 +149,9 @@ static int send_arps(const int fd, const int ifindex, struct thread_data *thread
 	socket_address.sll_halen = MAC_LENGTH;
 	socket_address.sll_addr[6] = 0;
 	socket_address.sll_addr[7] = 0;
+#else
+	(void)ifindex;
+#endif
 
 	struct ethhdr *send_req = (struct ethhdr *) buffer;
 	struct arp_header *arp_req = (struct arp_header *) (buffer + ETH2_HEADER_LEN);
@@ -170,7 +166,9 @@ static int send_arps(const int fd, const int ifindex, struct thread_data *thread
 	// Source MAC to our own MAC address
 	memcpy(send_req->h_source, thread_data->mac, MAC_LENGTH);
 	memcpy(arp_req->sender_mac, thread_data->mac, MAC_LENGTH);
+#ifdef __linux__
 	memcpy(socket_address.sll_addr, thread_data->mac, MAC_LENGTH);
+#endif
 
 	// Protocol type is ARP
 	send_req->h_proto = htons(ETH_P_ARP);
@@ -198,7 +196,11 @@ static int send_arps(const int fd, const int ifindex, struct thread_data *thread
 #endif
 
 		// Send ARP request
+#ifdef __linux__
 		ret = sendto(fd, buffer, 42, 0, (struct sockaddr *) &socket_address, sizeof(socket_address));
+#else
+		ret = rawframe_send(fd, buffer, 42);
+#endif
 		if (ret == -1)
 		{
 			err = errno;
@@ -219,6 +221,29 @@ out:
 
 static int create_arp_socket(const int ifindex, const char *iface, const char **error)
 {
+#ifndef __linux__
+	// Only ARP frames: ldh [12]; jeq #ETH_P_ARP; ret #-1; ret #0
+	static struct bpf_insn arp_only[] = {
+		BPF_STMT(BPF_LD + BPF_H + BPF_ABS, 12),
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, ETH_P_ARP, 0, 1),
+		BPF_STMT(BPF_RET + BPF_K, (u_int)-1),
+		BPF_STMT(BPF_RET + BPF_K, 0),
+	};
+	static const struct bpf_program filter = { sizeof(arp_only) / sizeof(arp_only[0]), arp_only };
+	(void)ifindex;
+
+	const int arp_socket = rawframe_open(iface, &filter);
+	if(arp_socket < 0)
+	{
+		*error = strerror(errno);
+#ifdef DEBUG
+		printf("Unable to open bpf(4) for ARP communications on interface %s: %s\n", iface, *error);
+#endif
+		return -1;
+	}
+
+	return arp_socket;
+#else
 	// Create socket for ARP communications
 	const int arp_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ARP));
 	if(arp_socket < 0)
@@ -246,6 +271,7 @@ static int create_arp_socket(const int ifindex, const char *iface, const char **
 	}
 
 	return arp_socket;
+#endif
 }
 
 static void add_result(struct in_addr *rcv_ip, unsigned char *sender_mac,
@@ -318,6 +344,7 @@ static ssize_t read_arp(const int fd, struct thread_data *thread_data)
 			break;
 		}
 
+#ifdef __linux__
 		// Wait for the next frame, but not beyond the deadline
 		struct pollfd pfd = { .fd = fd, .events = POLLIN, .revents = 0 };
 		const int pret = poll(&pfd, 1, (int)remaining_ms);
@@ -347,6 +374,22 @@ static ssize_t read_arp(const int fd, struct thread_data *thread_data)
 			printf("recvfrom(): %s", thread_data->error);
 			break;
 		}
+#else
+		// Next frame, waiting no longer than the deadline
+		ret = rawframe_recv(fd, buffer, BUF_SIZE, (int)remaining_ms);
+		if(ret == 0 || (ret < 0 && errno == EINTR))
+		{
+			ret = 0;
+			continue;
+		}
+		if(ret < 0)
+		{
+			// Error
+			thread_data->error = strerror(errno);
+			printf("read(): %s", thread_data->error);
+			break;
+		}
+#endif
 		struct ethhdr *rcv_resp = (struct ethhdr *) buffer;
 		struct arp_header *arp_resp = (struct arp_header *) (buffer + ETH2_HEADER_LEN);
 		if ((size_t)ret < ETH2_HEADER_LEN + sizeof(struct arp_header))
@@ -520,7 +563,11 @@ static void *arp_scan_iface(void *args)
 	}
 
 	// Close socket
+#ifdef __linux__
 	if(close(arp_socket) != 0)
+#else
+	if(rawframe_close(arp_socket) != 0)
+#endif
 		thread_data->status = STATUS_ERROR;
 
 	if(thread_data->status != STATUS_ERROR)
@@ -802,4 +849,3 @@ int run_arp_scan(const bool scan_all, const bool extreme_mode)
 
 	return EXIT_SUCCESS;
 }
-#endif // __linux__

@@ -9,20 +9,6 @@
 *
 *  This file is copyright under the latest version of the EUPL.
 *  Please see LICENSE file for your rights under this license. */
-#ifndef __linux__
-#include "FTL.h"
-#include "dhcpv6-discover.h"
-#include <stdio.h>
-#include <stdlib.h>
-
-int dhcpv6_discover_iface(const char *ifname, const unsigned int timeout)
-{
-	(void)ifname;
-	(void)timeout;
-	return 0;
-}
-#else
-
 
 #include "dhcpv6-discover.h"
 #include "dhcp-discover.h"
@@ -32,6 +18,7 @@ int dhcpv6_discover_iface(const char *ifname, const unsigned int timeout)
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <inttypes.h>
 #include <errno.h>
 #include <unistd.h>
@@ -45,6 +32,10 @@ int dhcpv6_discover_iface(const char *ifname, const unsigned int timeout)
 #include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/icmp6.h>
+// Mobile IPv6 home agent flag (RFC 6275), ND_RA_FLAG_HA in BSD headers
+#ifndef ND_RA_FLAG_HOME_AGENT
+#define ND_RA_FLAG_HOME_AGENT 0x20
+#endif
 
 // escape_data()
 #include "log.h"
@@ -873,4 +864,3 @@ int dhcpv6_discover_iface(const char *ifname, const unsigned int timeout)
 
 	return do_discoverv6(fd, ifname, timeout);
 }
-#endif // __linux__

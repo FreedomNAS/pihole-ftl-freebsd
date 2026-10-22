@@ -255,6 +255,8 @@ set(sources
         capabilities.c
         capabilities.h
         compat/gettid.c
+        compat/rawframe.c
+        compat/rawframe.h
         compat/sysinfo.c
         compat/sysinfo.h
         daemon.c
