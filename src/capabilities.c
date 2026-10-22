@@ -416,8 +416,15 @@ bool check_capabilities(void)
 		log_warn("Not running as root, needed for setting the system time from the NTP client");
 		capabilities_okay = false;
 	}
-	log_warn("Not running as root, needed for taking ownership of the files FTL creates");
-	return false && capabilities_okay;
+	// Files FTL creates belong to the user it runs as. Only another user
+	// than pihole would need root to hand them over
+	const struct passwd *pw = getpwnam("pihole");
+	if(pw == NULL || pw->pw_uid != geteuid())
+	{
+		log_warn("Not running as root, needed for taking ownership of the files FTL creates");
+		capabilities_okay = false;
+	}
+	return capabilities_okay;
 }
 
 #endif // __linux__

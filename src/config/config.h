@@ -11,7 +11,12 @@
 #define CONFIG_H
 
 // Hardcoded PID path — see GHSA-6w8x-p785-6pm4
+#ifdef __linux__
 #define FTL_PID_FILE "/run/pihole-FTL.pid"
+#else
+// /var/run is where BSD keeps PID files; /run does not exist there
+#define FTL_PID_FILE "/var/run/pihole-FTL.pid"
+#endif
 
 // enum privacy_level
 #include "enums.h"
