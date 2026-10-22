@@ -656,7 +656,6 @@ static const char *__attribute__ ((const)) iflaTypeToString(const int ifla_type)
 }
 
 // Names of the RTAX_* attributes nested in RTA_METRICS (as used by iproute2)
-#ifdef __linux__
 static const char *__attribute__ ((const)) rtaxTypeToString(const int rtax_type)
 {
 	switch (rtax_type) {
@@ -698,7 +697,6 @@ static const char *__attribute__ ((const)) rtaxTypeToString(const int rtax_type)
 			return "unknown";
 	}
 }
-#endif
 
 static const char *__attribute__ ((const)) family_name(int family)
 {
@@ -879,7 +877,6 @@ static const char *__attribute__ ((const)) family_name(int family)
 #define parse_rtattr_one_nested(type, rta) \
 	(parse_rtattr_one(type, RTA_DATA(rta), RTA_PAYLOAD(rta)))
 
-#ifdef __linux__
 static int parse_rtattr_flags(struct rtattr *tb[], int max,
                               struct rtattr *rta, int len,
                               unsigned short flags)
@@ -895,7 +892,6 @@ static int parse_rtattr_flags(struct rtattr *tb[], int max,
 	}
 	return 0;
 }
-#endif
 
 #ifdef __linux__
 static struct rtattr * __attribute__((pure)) parse_rtattr_one(int type, struct rtattr *rta, int len)

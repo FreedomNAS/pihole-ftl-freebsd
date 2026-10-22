@@ -19,6 +19,14 @@
 #include <string.h>
 #include <errno.h>
 
+// Highest RTAX_* metric. FreeBSD's netlink(4) calls it NL_RTAX_MAX, its
+// RTAX_MAX is the unrelated routing socket address count
+#ifdef NL_RTAX_MAX
+#define METRICS_MAX NL_RTAX_MAX
+#else
+#define METRICS_MAX RTAX_MAX
+#endif
+
 // defined in src/dnsmasq/rfc1035.c
 extern int private_net(struct in_addr addr, int ban_localhost);
 
@@ -287,15 +295,31 @@ static int nlparsemsg_route(struct rtmsg *rt, void *buf, size_t len, cJSON *rout
 				break;
 			}
 
-#ifdef __linux__
+#ifdef __FreeBSD__
+			// FreeBSD's own attributes, reusing numbers Linux retired
+			// (protoinfo, mp_algo): the kernel nexthop index and the
+			// RTF_* flags of the route (netstat -r shows them as UGS...)
+			case NL_RTA_KNH_ID:
+			case NL_RTA_RTFLAGS:
+			{
+				if(!detailed)
+					break;
+				const char *name = rta->rta_type == NL_RTA_KNH_ID ? "knh_id" : "rtflags";
+				if(!rta_payload_ok(rta, sizeof(uint32_t), name))
+					break;
+				cJSON_AddNumberToObject(route, name, *(uint32_t*)RTA_DATA(rta));
+				break;
+			}
+#endif
+
 			case RTA_METRICS: // nested RTAX_* route metrics
 			{
 				if(!detailed)
 					break;
-				struct rtattr *mx[RTAX_MAX + 1];
-				parse_rtattr_nested(mx, RTAX_MAX, rta);
+				struct rtattr *mx[METRICS_MAX + 1];
+				parse_rtattr_nested(mx, METRICS_MAX, rta);
 				cJSON *metrics = cJSON_CreateObject();
-				for(unsigned int i = 1; i <= RTAX_MAX; i++)
+				for(unsigned int i = 1; i <= METRICS_MAX; i++)
 				{
 					if(mx[i] == NULL)
 						continue;
@@ -311,7 +335,6 @@ static int nlparsemsg_route(struct rtmsg *rt, void *buf, size_t len, cJSON *rout
 				cJSON_AddItemToObject(route, rtaTypeToString(rta->rta_type), metrics);
 				break;
 			}
-#endif
 
 			case RTA_TTL_PROPAGATE: // propagate TTL
 			case RTA_IP_PROTO: // IP protocol
@@ -634,8 +657,14 @@ static int nlparsemsg_address(struct ifaddrmsg *ifa, void *buf, size_t len, cJSO
 				struct timespec boot_clock;
 				clock_gettime(CLOCK_BOOTTIME, &boot_clock);
 				const time_t delta_time = wall_clock.tv_sec - boot_clock.tv_sec;
-				cJSON_AddNumberToObject(addr, "cstamp", delta_time + 0.01*ci->cstamp); // created timestamp
-				cJSON_AddNumberToObject(addr, "tstamp", delta_time + 0.01*ci->tstamp); // updated timestamp
+#ifdef __FreeBSD__
+				// Milliseconds since boot here, hundredths of a second on Linux
+				const double stamp_unit = 0.001;
+#else
+				const double stamp_unit = 0.01;
+#endif
+				cJSON_AddNumberToObject(addr, "cstamp", delta_time + stamp_unit*ci->cstamp); // created timestamp
+				cJSON_AddNumberToObject(addr, "tstamp", delta_time + stamp_unit*ci->tstamp); // updated timestamp
 				break;
 			}
 
@@ -664,6 +693,26 @@ static int nlparsemsg_address(struct ifaddrmsg *ifa, void *buf, size_t len, cJSO
 				cJSON_AddNumberToObject(addr, ifaTypeToString(rta->rta_type), number);
 				break;
 			}
+
+#ifdef __FreeBSD__
+			case IFA_FREEBSD: // nested: CARP vhid, IPv6 address flags
+			{
+				if(!detailed)
+					break;
+				struct rtattr *fb[IFAF_MAX + 1];
+				parse_rtattr_nested(fb, IFAF_MAX, rta);
+				cJSON *freebsd = cJSON_CreateObject();
+				if(fb[IFAF_VHID] != NULL && rta_payload_ok(fb[IFAF_VHID], sizeof(uint32_t), "carp_vhid"))
+					cJSON_AddNumberToObject(freebsd, "carp_vhid", *(uint32_t*)RTA_DATA(fb[IFAF_VHID]));
+				if(fb[IFAF_FLAGS] != NULL && rta_payload_ok(fb[IFAF_FLAGS], sizeof(uint32_t), "in6_flags"))
+					cJSON_AddNumberToObject(freebsd, "in6_flags", *(uint32_t*)RTA_DATA(fb[IFAF_FLAGS]));
+				if(freebsd->child != NULL)
+					cJSON_AddItemToObject(addr, "freebsd", freebsd);
+				else
+					cJSON_Delete(freebsd);
+				break;
+			}
+#endif
 
 			default:
 			{
@@ -804,6 +853,32 @@ static int nlparsemsg_link(struct ifinfomsg *ifi, void *buf, size_t len, cJSON *
 				}
 				break;
 			}
+
+#ifdef __FreeBSD__
+			case IFLA_FREEBSD: // nested: name and MAC the interface had when created
+			{
+				if(!detailed)
+					break;
+				struct rtattr *fb[IFLAF_MAX + 1];
+				parse_rtattr_nested(fb, IFLAF_MAX, rta);
+				cJSON *freebsd = cJSON_CreateObject();
+				if(fb[IFLAF_ORIG_IFNAME] != NULL)
+					add_rta_string(freebsd, "orig_ifname", fb[IFLAF_ORIG_IFNAME]);
+				if(fb[IFLAF_ORIG_HWADDR] != NULL && RTA_PAYLOAD(fb[IFLAF_ORIG_HWADDR]) == 6)
+				{
+					char mac[18];
+					const unsigned char *hw = RTA_DATA(fb[IFLAF_ORIG_HWADDR]);
+					snprintf(mac, sizeof(mac), "%02x:%02x:%02x:%02x:%02x:%02x",
+					         hw[0], hw[1], hw[2], hw[3], hw[4], hw[5]);
+					cJSON_AddStringToObject(freebsd, "orig_hwaddr", mac);
+				}
+				if(freebsd->child != NULL)
+					cJSON_AddItemToObject(link, "freebsd", freebsd);
+				else
+					cJSON_Delete(freebsd);
+				break;
+			}
+#endif
 
 			case IFLA_IFNAME:
 			case IFLA_ALT_IFNAME:
